@@ -1,0 +1,19 @@
+name: flutter_marketing_kit
+description: The world's best Flutter marketing automation toolkit. Automatically generate store assets, screenshots, and graphics.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  config_engine:
+    path: ../config_engine
+  flutter_marketing_cli:
+    path: ../flutter_marketing_cli
+  shared:
+    path: ../shared
+
+dev_dependencies:
+  test: ^1.25.0
+  very_good_analysis: ^6.0.0

@@ -1,0 +1,37 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+.idea/
+*.iml
+
+# User-specific files
+*.rs.bk
+
+# Dart & Flutter
+.dart_tool/
+.packages
+build/
+.pub-cache/
+.pub/
+
+# Generated Assets Output
+marketing/
+
+# Coverage
+coverage/
+
+# Melos
+melos_*.log
+
+# Node dependencies
+node_modules/
+
+# Environment / Secret keys
+*.env

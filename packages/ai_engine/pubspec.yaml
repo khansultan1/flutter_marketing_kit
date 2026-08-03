@@ -1,0 +1,16 @@
+name: ai_engine
+description: Optional AI copywriting, ASO optimization, and localization engine for flutter_marketing_kit.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  meta: ^1.11.0
+  shared:
+    path: ../shared
+
+dev_dependencies:
+  test: ^1.25.0
+  very_good_analysis: ^6.0.0

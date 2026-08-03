@@ -1,0 +1,47 @@
+name: flutter_marketing_cli
+description: Command-line interface tool for flutter_marketing_kit.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+executables:
+  flutter_marketing_kit: flutter_marketing_kit
+
+dependencies:
+  ai_engine:
+    path: ../ai_engine
+  args: ^2.5.0
+  asset_export_engine:
+    path: ../asset_export_engine
+  config_engine:
+    path: ../config_engine
+  device_frame_engine:
+    path: ../device_frame_engine
+  feature_graphic_engine:
+    path: ../feature_graphic_engine
+  file: ^7.0.0
+  github_engine:
+    path: ../github_engine
+  image: ^4.2.0
+  image_engine:
+    path: ../image_engine
+  logging: ^1.2.0
+  navigation_engine:
+    path: ../navigation_engine
+  path: ^1.9.0
+  screenshot_engine:
+    path: ../screenshot_engine
+  shared:
+    path: ../shared
+  social_engine:
+    path: ../social_engine
+  store_engine:
+    path: ../store_engine
+  template_engine:
+    path: ../template_engine
+
+dev_dependencies:
+  test: ^1.25.0
+  very_good_analysis: ^6.0.0

@@ -1,0 +1,21 @@
+name: flutter_marketing_kit
+packages:
+  - packages/*
+  - example
+
+scripts:
+  analyze:
+    run: melos exec -- "dart analyze ."
+    description: Run dart analyze on all packages.
+
+  test:
+    run: melos exec --dir-exists="test" -- "dart test"
+    description: Run dart test on all testable packages.
+
+  format:
+    run: melos exec -- "dart format . --set-exit-if-changed"
+    description: Check formatting on all packages.
+
+  format:fix:
+    run: melos exec -- "dart format ."
+    description: Fix formatting across all packages.

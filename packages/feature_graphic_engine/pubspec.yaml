@@ -1,0 +1,24 @@
+name: feature_graphic_engine
+description: 1024x500 Play Store feature graphic creation engine for flutter_marketing_kit.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  device_frame_engine:
+    path: ../device_frame_engine
+  image: ^4.2.0
+  image_engine:
+    path: ../image_engine
+  meta: ^1.11.0
+  path: ^1.9.0
+  shared:
+    path: ../shared
+  template_engine:
+    path: ../template_engine
+
+dev_dependencies:
+  test: ^1.25.0
+  very_good_analysis: ^6.0.0

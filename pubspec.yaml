@@ -1,0 +1,11 @@
+name: flutter_marketing_kit_workspace
+description: Monorepo workspace for flutter_marketing_kit
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dev_dependencies:
+  melos: ^6.0.0
+  very_good_analysis: ^6.0.0
