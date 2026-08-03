@@ -1,7 +1,8 @@
 name: feature_graphic_engine
 description: 1024x500 Play Store feature graphic creation engine for flutter_marketing_kit.
 version: 1.0.0
-publish_to: none
+homepage: https://github.com/mohamedmekawy/flutter_marketing_kit
+repository: https://github.com/mohamedmekawy/flutter_marketing_kit
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

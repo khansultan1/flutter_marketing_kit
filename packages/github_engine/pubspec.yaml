@@ -1,7 +1,8 @@
 name: github_engine
-description: GitHub documentation and README asset generator for flutter_marketing_kit.
+description: GitHub README, documentation, installation guide, and badge asset generator engine for flutter_marketing_kit.
 version: 1.0.0
-publish_to: none
+homepage: https://github.com/mohamedmekawy/flutter_marketing_kit
+repository: https://github.com/mohamedmekawy/flutter_marketing_kit
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

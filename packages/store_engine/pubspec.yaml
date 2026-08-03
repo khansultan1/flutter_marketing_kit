@@ -1,7 +1,8 @@
 name: store_engine
 description: App store specifications and asset layout generator engine for Google Play, App Store, Huawei, Amazon, and Microsoft Store.
 version: 1.0.0
-publish_to: none
+homepage: https://github.com/mohamedmekawy/flutter_marketing_kit
+repository: https://github.com/mohamedmekawy/flutter_marketing_kit
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
