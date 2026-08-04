@@ -23,36 +23,89 @@ class HarnessGenerator {
     return match?.group(1);
   }
 
+  /// Checks if [projectRoot] uses Riverpod.
+  bool _usesRiverpod(String projectRoot) {
+    final pubspec = File(p.join(projectRoot, 'pubspec.yaml'));
+    if (pubspec.existsSync() &&
+        pubspec.readAsStringSync().contains('flutter_riverpod')) {
+      return true;
+    }
+    final mainDart = File(p.join(projectRoot, 'lib', 'main.dart'));
+    if (mainDart.existsSync()) {
+      final content = mainDart.readAsStringSync();
+      return content.contains('ProviderScope') ||
+          content.contains('ConsumerWidget') ||
+          content.contains('ConsumerStatefulWidget');
+    }
+    return false;
+  }
+
   /// Reads `lib/main.dart` at [projectRoot] and returns the widget class
-  /// passed to `runApp(...)`.
+  /// passed to `runApp(...)` or defined as the main app.
   String? _detectMainWidget(String projectRoot) {
     final mainDart = File(p.join(projectRoot, 'lib', 'main.dart'));
     if (!mainDart.existsSync()) return null;
     final content = mainDart.readAsStringSync();
 
-    // Pattern 1: runApp(const MyApp()); or runApp(MyApp());
-    final runAppMatch = RegExp(
-      r'runApp\(\s*(?:const\s+|new\s+)?([A-Z][a-zA-Z0-9_]+)\s*\(',
-    ).firstMatch(content);
-    if (runAppMatch != null) {
-      final name = runAppMatch.group(1)!;
-      if (!const {'DevicePreview', 'ProviderScope', 'EasyLocalization'}
-          .contains(name)) {
+    const ignoredNames = {
+      'DevicePreview',
+      'ProviderScope',
+      'UncontrolledProviderScope',
+      'EasyLocalization',
+      'MaterialApp',
+      'WidgetsApp',
+      'CupertinoApp',
+      'SizedBox',
+      'Container',
+      'Center',
+      'Padding',
+    };
+
+    // Pattern 1: child: MyApp() inside ProviderScope / DevicePreview wrapper
+    final childMatches = RegExp(
+      r'child:\s*(?:const\s+|new\s+)?([A-Z][a-zA-Z0-9_]+)\s*\(',
+    ).allMatches(content);
+    for (final match in childMatches) {
+      final name = match.group(1)!;
+      if (!ignoredNames.contains(name)) {
         return name;
       }
     }
 
     // Pattern 2: builder: (_) => MyApp() inside a wrapper
-    final builderMatch = RegExp(
+    final builderMatches = RegExp(
       r'builder:\s*\([^)]*\)\s*=>\s*(?:const\s+|new\s+)?([A-Z][a-zA-Z0-9_]+)\s*\(',
-    ).firstMatch(content);
-    if (builderMatch != null) return builderMatch.group(1);
+    ).allMatches(content);
+    for (final match in builderMatches) {
+      final name = match.group(1)!;
+      if (!ignoredNames.contains(name)) {
+        return name;
+      }
+    }
 
-    // Pattern 3: class MyApp extends StatelessWidget / StatefulWidget
-    final classMatch = RegExp(
-      r'class\s+([A-Z][a-zA-Z0-9_]+)\s+extends\s+(?:Stateless|Stateful)Widget',
-    ).firstMatch(content);
-    return classMatch?.group(1);
+    // Pattern 3: runApp(const MyApp()); or runApp(MyApp());
+    final runAppMatches = RegExp(
+      r'runApp\(\s*(?:const\s+|new\s+)?([A-Z][a-zA-Z0-9_]+)\s*\(',
+    ).allMatches(content);
+    for (final match in runAppMatches) {
+      final name = match.group(1)!;
+      if (!ignoredNames.contains(name)) {
+        return name;
+      }
+    }
+
+    // Pattern 4: class MyApp extends StatelessWidget / StatefulWidget / ConsumerWidget
+    final classMatches = RegExp(
+      r'class\s+([A-Z][a-zA-Z0-9_]+)\s+extends\s+(?:StatelessWidget|StatefulWidget|ConsumerWidget|HookConsumerWidget|ConsumerStatefulWidget|Widget)',
+    ).allMatches(content);
+    for (final match in classMatches) {
+      final name = match.group(1)!;
+      if (!ignoredNames.contains(name)) {
+        return name;
+      }
+    }
+
+    return null;
   }
 
   /// Generates `test/marketing_screenshots_test.dart` inside [projectRoot].
@@ -75,6 +128,7 @@ class HarnessGenerator {
 
     final packageName = _detectPackageName(projectRoot);
     final mainWidget = _detectMainWidget(projectRoot);
+    final isRiverpod = _usesRiverpod(projectRoot);
     final canImportApp = packageName != null && mainWidget != null;
 
     final buffer = StringBuffer()
@@ -86,6 +140,10 @@ class HarnessGenerator {
       ..writeln()
       ..writeln("import 'package:flutter/material.dart';")
       ..writeln("import 'package:flutter_test/flutter_test.dart';");
+
+    if (isRiverpod) {
+      buffer.writeln("import 'package:flutter_riverpod/flutter_riverpod.dart';");
+    }
 
     if (canImportApp) {
       buffer.writeln("import 'package:$packageName/main.dart';");
@@ -143,12 +201,16 @@ class HarnessGenerator {
             ..writeln('      final $keyName = GlobalKey();');
 
           if (canImportApp) {
+            final appWidget = isRiverpod
+                ? 'ProviderScope(child: $mainWidget())'
+                : '$mainWidget()';
+
             // Boot the user's REAL app and navigate to the configured route
             buffer
               ..writeln('      await tester.pumpWidget(')
               ..writeln('        RepaintBoundary(')
               ..writeln('          key: $keyName,')
-              ..writeln('          child: $mainWidget(),')
+              ..writeln('          child: $appWidget,')
               ..writeln('        ),')
               ..writeln('      );')
               ..writeln('      await tester.pumpAndSettle();');
@@ -163,11 +225,21 @@ class HarnessGenerator {
                 )
                 ..writeln("          .pushNamed('${screen.route}');")
                 ..writeln('        await tester.pumpAndSettle();')
-                ..writeln('      } catch (e) {')
+                ..writeln('      } catch (_) {')
+                ..writeln('        try {')
                 ..writeln(
-                  "        debugPrint('Could not navigate to "
+                  // ignore: missing_whitespace_between_adjacent_strings
+                  '          final dynamic routerObj = (find.byType(Router)'
+                  '.evaluate().first.widget as Router).routerDelegate;',
+                )
+                ..writeln("          routerObj.go('${screen.route}');")
+                ..writeln('          await tester.pumpAndSettle();')
+                ..writeln('        } catch (e) {')
+                ..writeln(
+                  "          debugPrint('Could not navigate to "
                   "${screen.route}: \$e');",
                 )
+                ..writeln('        }')
                 ..writeln('      }');
             }
           } else {
