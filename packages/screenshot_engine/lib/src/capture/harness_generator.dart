@@ -3,115 +3,101 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:shared/shared.dart';
 
-/// Helper generator for creating headless Flutter WidgetTester test harness.
+/// Generates a Flutter widget test harness file inside the **calling project**
+/// (the user's own app, not the package's example).
+///
+/// The generated test imports the user's real app widget, navigates to the
+/// configured routes, and captures each screen via `matchesGoldenFile`.
+/// Running it with `flutter test --update-goldens` produces real screenshots.
 class HarnessGenerator {
   /// Creates a [HarnessGenerator].
   const HarnessGenerator();
 
-  /// Detect package name from `pubspec.yaml`.
+  /// Reads `pubspec.yaml` at [projectRoot] and returns the `name:` field.
   String? _detectPackageName(String projectRoot) {
     final pubspec = File(p.join(projectRoot, 'pubspec.yaml'));
-    if (pubspec.existsSync()) {
-      final content = pubspec.readAsStringSync();
-      final match = RegExp(r'^name:\s*([a-zA-Z0-9_]+)', multiLine: true)
-          .firstMatch(content);
-      if (match != null) {
-        return match.group(1);
-      }
-    }
-    return null;
+    if (!pubspec.existsSync()) return null;
+    final content = pubspec.readAsStringSync();
+    final match =
+        RegExp(r'^name:\s*([a-zA-Z0-9_]+)', multiLine: true).firstMatch(content);
+    return match?.group(1);
   }
 
-  /// Detect the main widget class name from `lib/main.dart`.
+  /// Reads `lib/main.dart` at [projectRoot] and returns the widget class
+  /// passed to `runApp(...)`.
   String? _detectMainWidget(String projectRoot) {
     final mainDart = File(p.join(projectRoot, 'lib', 'main.dart'));
-    if (mainDart.existsSync()) {
-      final content = mainDart.readAsStringSync();
+    if (!mainDart.existsSync()) return null;
+    final content = mainDart.readAsStringSync();
 
-      // 1. Common pattern: runApp(const MyApp()); or runApp(MyApp());
-      final match = RegExp(
-        r'runApp\(\s*(?:const\s+|new\s+)?([a-zA-Z0-9_]+)\s*\(',
-      ).firstMatch(content);
-      if (match != null) {
-        final name = match.group(1);
-        if (name != 'DevicePreview' &&
-            name != 'ProviderScope' &&
-            name != 'MaterialApp') {
-          return name;
-        }
-      }
-
-      // 2. Scan if DevicePreview or ProviderScope wraps the app
-      final wrappedMatch = RegExp(
-        r'(?:DevicePreview|ProviderScope)\(\s*(?:enabled:[^,]+,\s*)?'
-        r'builder:\s*\([^)]*\)\s*=>\s*(?:const\s+|new\s+)?([a-zA-Z0-9_]+)',
-      ).firstMatch(content);
-      if (wrappedMatch != null) {
-        return wrappedMatch.group(1);
-      }
-
-      // 3. Look for classes extending StatelessWidget/StatefulWidget
-      final classMatch = RegExp(
-        r'class\s+([a-zA-Z0-9_]+App|[a-zA-Z0-9_]+MyApp)\s+extends\s+State',
-      ).firstMatch(content);
-      if (classMatch != null) {
-        return classMatch.group(1);
+    // Pattern 1: runApp(const MyApp()); or runApp(MyApp());
+    final runAppMatch = RegExp(
+      r'runApp\(\s*(?:const\s+|new\s+)?([A-Z][a-zA-Z0-9_]+)\s*\(',
+    ).firstMatch(content);
+    if (runAppMatch != null) {
+      final name = runAppMatch.group(1)!;
+      if (!const {'DevicePreview', 'ProviderScope', 'EasyLocalization'}
+          .contains(name)) {
+        return name;
       }
     }
-    return null;
+
+    // Pattern 2: builder: (_) => MyApp() inside a wrapper
+    final builderMatch = RegExp(
+      r'builder:\s*\([^)]*\)\s*=>\s*(?:const\s+|new\s+)?([A-Z][a-zA-Z0-9_]+)\s*\(',
+    ).firstMatch(content);
+    if (builderMatch != null) return builderMatch.group(1);
+
+    // Pattern 3: class MyApp extends StatelessWidget / StatefulWidget
+    final classMatch = RegExp(
+      r'class\s+([A-Z][a-zA-Z0-9_]+)\s+extends\s+(?:Stateless|Stateful)Widget',
+    ).firstMatch(content);
+    return classMatch?.group(1);
   }
 
-  /// Generates the standalone `test/flutter_marketing_kit_harness_test.dart`
-  /// file that captures exact widget screenshots in headless mode.
+  /// Generates `test/marketing_screenshots_test.dart` inside [projectRoot].
+  ///
+  /// Run the generated file with:
+  /// ```dart
+  /// flutter test test/marketing_screenshots_test.dart --update-goldens
+  /// ```
   Future<File> generateHarnessScript({
     required MarketingConfig config,
     required String projectRoot,
   }) async {
-    // Auto-detect if we should run inside an "example" subdirectory
-    var effectiveProjectRoot = projectRoot;
-    if (!File(p.join(effectiveProjectRoot, 'lib', 'main.dart')).existsSync()) {
-      final exampleDir = Directory(p.join(effectiveProjectRoot, 'example'));
-      if (exampleDir.existsSync() &&
-          File(p.join(exampleDir.path, 'lib', 'main.dart')).existsSync()) {
-        effectiveProjectRoot = exampleDir.path;
-      }
-    }
-
     final harnessFile = File(
-      p.join(
-        effectiveProjectRoot,
-        'test',
-        'flutter_marketing_kit_harness_test.dart',
-      ),
+      p.join(projectRoot, 'test', 'marketing_screenshots_test.dart'),
     );
 
     if (!harnessFile.parent.existsSync()) {
       harnessFile.parent.createSync(recursive: true);
     }
 
-    final packageName = _detectPackageName(effectiveProjectRoot);
-    final mainWidget = _detectMainWidget(effectiveProjectRoot);
+    final packageName = _detectPackageName(projectRoot);
+    final mainWidget = _detectMainWidget(projectRoot);
+    final canImportApp = packageName != null && mainWidget != null;
 
     final buffer = StringBuffer()
-      ..writeln('// Generated by flutter_marketing_kit. DO NOT EDIT.')
-      ..writeln("import 'dart:io';")
-      ..writeln("import 'dart:ui' as ui;")
+      ..writeln('// Generated by flutter_marketing_kit — DO NOT EDIT.')
+      ..writeln(
+        '// Run: flutter test test/marketing_screenshots_test.dart'
+        ' --update-goldens',
+      )
+      ..writeln()
       ..writeln("import 'package:flutter/material.dart';")
-      ..writeln("import 'package:flutter/rendering.dart';")
       ..writeln("import 'package:flutter_test/flutter_test.dart';");
 
-    if (packageName != null && mainWidget != null) {
+    if (canImportApp) {
       buffer.writeln("import 'package:$packageName/main.dart';");
     }
 
     buffer
       ..writeln()
       ..writeln('void main() {')
-      ..writeln('  TestWidgetsFlutterBinding.ensureInitialized();')
-      ..writeln()
-      ..writeln("  testWidgets('Capture Flutter Marketing Screenshots', "
-          '(WidgetTester tester) async {')
-      ..writeln('    final binding = tester.binding;')
+      ..writeln('  testWidgets(')
+      ..writeln("    'Marketing Screenshots',")
+      ..writeln('    (WidgetTester tester) async {')
+      ..writeln('      final binding = tester.binding;')
       ..writeln();
 
     for (final deviceId in config.devices) {
@@ -127,144 +113,128 @@ class HarnessGenerator {
           final screenId = entry.key;
           final screen = entry.value;
 
-          final fileName = '${deviceSpec.id}_${screenId}_$locale.png';
-          final outputPath = p.canonicalize(
-            p.join(
-              config.outputDirectory,
-              'raw_screenshots',
-              locale,
-              deviceSpec.id,
-              fileName,
-            ),
+          // Output path relative to projectRoot
+          final outputPath = p.join(
+            config.outputDirectory,
+            'raw_screenshots',
+            locale,
+            deviceSpec.id,
+            '${deviceSpec.id}_${screenId}_$locale.png',
           );
 
-          final keyName = 'key_${deviceSpec.id}_${screenId}_$locale';
+          // Golden path is relative to the test file (test/ dir → ../)
+          final goldenPath = p.join('..', outputPath);
+
+          final keyName = 'key_${deviceSpec.id}_${screenId}_$locale'
+              .replaceAll('-', '_');
 
           buffer
-            ..writeln('    // $screenId on ${deviceSpec.name} ($locale)')
-            ..writeln('    await binding.setSurfaceSize(const Size($width, '
-                '$height));')
-            ..writeln('    tester.view.devicePixelRatio = $ratio;')
-            ..writeln('    final $keyName = GlobalKey();');
+            ..writeln(
+              // ignore: missing_whitespace_between_adjacent_strings
+              '      // ---'
+              ' ${deviceSpec.name} | $screenId | $locale ---',
+            )
+            ..writeln(
+              // ignore: missing_whitespace_between_adjacent_strings
+              '      await binding.setSurfaceSize('
+              'const Size($width, $height));',
+            )
+            ..writeln('      tester.view.devicePixelRatio = $ratio;')
+            ..writeln('      final $keyName = GlobalKey();');
 
-          if (packageName != null && mainWidget != null) {
+          if (canImportApp) {
+            // Boot the user's REAL app and navigate to the configured route
             buffer
-              ..writeln('    await tester.pumpWidget(')
-              ..writeln('      RepaintBoundary(')
-              ..writeln('        key: $keyName,')
-              ..writeln('        child: $mainWidget(),')
-              ..writeln('      ),')
-              ..writeln('    );')
-              ..writeln('    await tester.pumpAndSettle();');
+              ..writeln('      await tester.pumpWidget(')
+              ..writeln('        RepaintBoundary(')
+              ..writeln('          key: $keyName,')
+              ..writeln('          child: $mainWidget(),')
+              ..writeln('        ),')
+              ..writeln('      );')
+              ..writeln('      await tester.pumpAndSettle();');
 
             if (screen.route != '/') {
               buffer
-                ..writeln('    try {')
-                ..writeln('      final navigator = '
-                    'tester.state<NavigatorState>(find.byType(Navigator));')
-                ..writeln("      navigator.pushNamed('${screen.route}');")
-                ..writeln('      await tester.pumpAndSettle();')
-                ..writeln('    } catch (e) {')
-                ..writeln('      debugPrint("Could not navigate to route '
-                    '${screen.route}: \$e");')
-                ..writeln('    }');
+                ..writeln('      try {')
+                ..writeln(
+                  // ignore: missing_whitespace_between_adjacent_strings
+                  '        tester.state<NavigatorState>'
+                  '(find.byType(Navigator))',
+                )
+                ..writeln("          .pushNamed('${screen.route}');")
+                ..writeln('        await tester.pumpAndSettle();')
+                ..writeln('      } catch (e) {')
+                ..writeln(
+                  "        debugPrint('Could not navigate to "
+                  "${screen.route}: \$e');",
+                )
+                ..writeln('      }');
             }
           } else {
-            // Fallback mock screen scaffold
-            final subText = screen.subtitle ?? 'Route: ${screen.route}';
+            // Fallback: can't import app — render a labelled placeholder
+            final subtitle = screen.subtitle ?? screen.route;
             buffer
-              ..writeln('    await tester.pumpWidget(')
-              ..writeln('      MaterialApp(')
-              ..writeln("        title: '${config.appName}',")
-              ..writeln('        debugShowCheckedModeBanner: false,')
-              ..writeln('        home: RepaintBoundary(')
-              ..writeln('          key: $keyName,')
-              ..writeln('          child: Container(')
-              ..writeln('            decoration: const BoxDecoration(')
-              ..writeln('              gradient: LinearGradient(')
-              ..writeln('                begin: Alignment.topCenter,')
-              ..writeln('                end: Alignment.bottomCenter,')
-              ..writeln('                colors: [Color(0xFF4E46E5), '
-                  'Color(0xFF06B6D4)],')
-              ..writeln('              ),')
-              ..writeln('            ),')
+              ..writeln('      await tester.pumpWidget(')
+              ..writeln('        MaterialApp(')
+              ..writeln('          debugShowCheckedModeBanner: false,')
+              ..writeln('          home: RepaintBoundary(')
+              ..writeln('            key: $keyName,')
               ..writeln('            child: Scaffold(')
-              ..writeln('              backgroundColor: Colors.transparent,')
-              ..writeln('              appBar: AppBar(')
-              ..writeln('                backgroundColor: Colors.black26,')
-              ..writeln('                elevation: 0,')
-              ..writeln('                title: Text("${screen.title}", '
-                  'style: const TextStyle(color: Colors.white)),')
-              ..writeln('              ),')
+              ..writeln(
+                '              backgroundColor: const Color(0xFF1A1A2E),',
+              )
               ..writeln('              body: Center(')
-              ..writeln('                child: Padding(')
-              ..writeln('                  padding: const '
-                  'EdgeInsets.all(24.0),')
-              ..writeln('                  child: Card(')
-              ..writeln('                    elevation: 8,')
-              ..writeln('                    shape: RoundedRectangleBorder(')
-              ..writeln('                      borderRadius: '
-                  'BorderRadius.circular(16),')
-              ..writeln('                    ),')
-              ..writeln('                    child: Padding(')
-              ..writeln('                      padding: const '
-                  'EdgeInsets.all(32.0),')
-              ..writeln('                      child: Column(')
-              ..writeln('                        mainAxisSize: '
-                  'MainAxisSize.min,')
-              ..writeln('                        children: [')
-              ..writeln('                          const Icon(Icons.stars, '
-                  'size: 80, color: Color(0xFF4E46E5)),')
-              ..writeln('                          const SizedBox(height: 16),')
-              ..writeln('                          Text("${screen.title}", '
-                  'style: const TextStyle(fontSize: 24, fontWeight: '
-                  'FontWeight.bold, color: Color(0xFF1E293B))),')
-              ..writeln('                          const SizedBox(height: 8),')
-              ..writeln('                          Text("$subText", style: '
-                  'const TextStyle(fontSize: 16, color: Color(0xFF64748B))),')
-              ..writeln('                          const SizedBox(height: 24),')
-              ..writeln('                          ElevatedButton(')
-              ..writeln('                            style: '
-                  'ElevatedButton.styleFrom(')
-              ..writeln('                              backgroundColor: '
-                  'const Color(0xFF4E46E5),')
-              ..writeln('                              foregroundColor: '
-                  'Colors.white,')
-              ..writeln('                            ),')
-              ..writeln('                            onPressed: () {},')
-              ..writeln('                            child: '
-                  'Text("Explore ${screen.title}"),')
-              ..writeln('                          ),')
-              ..writeln('                        ],')
+              ..writeln('                child: Column(')
+              ..writeln('                  mainAxisSize: MainAxisSize.min,')
+              ..writeln('                  children: [')
+              ..writeln("                    Text('${screen.title}',")
+              ..writeln(
+                '                      style: const TextStyle(',
+              )
+              ..writeln(
+                '                        color: Colors.white,',
+              )
+              ..writeln(
+                '                        fontSize: 28,',
+              )
+              ..writeln(
+                '                        fontWeight: FontWeight.bold,',
+              )
               ..writeln('                      ),')
               ..writeln('                    ),')
-              ..writeln('                  ),')
+              ..writeln('                    const SizedBox(height: 8),')
+              ..writeln("                    Text('$subtitle',")
+              ..writeln('                      style: const TextStyle(')
+              ..writeln(
+                '                        color: Colors.white70,',
+              )
+              ..writeln('                        fontSize: 16,')
+              ..writeln('                      ),')
+              ..writeln('                    ),')
+              ..writeln('                  ],')
               ..writeln('                ),')
               ..writeln('              ),')
               ..writeln('            ),')
               ..writeln('          ),')
               ..writeln('        ),')
-              ..writeln('      ),')
-              ..writeln('    );')
-              ..writeln('    await tester.pumpAndSettle();');
+              ..writeln('      );')
+              ..writeln('      await tester.pumpAndSettle();');
           }
 
-          final relativeFromProjectRoot =
-              p.relative(outputPath, from: effectiveProjectRoot);
-          final goldenPath = '../$relativeFromProjectRoot';
-
+          // Capture via golden matcher
           buffer
-            ..writeln('    await expectLater(')
-            ..writeln('      find.byKey($keyName),')
-            ..writeln("      matchesGoldenFile('$goldenPath'),")
-            ..writeln('    );')
+            ..writeln('      await expectLater(')
+            ..writeln('        find.byKey($keyName),')
+            ..writeln("        matchesGoldenFile('$goldenPath'),")
+            ..writeln('      );')
             ..writeln();
         }
       }
     }
 
     buffer
-      ..writeln('  });')
+      ..writeln('    },')
+      ..writeln('  );')
       ..writeln('}');
 
     await harnessFile.writeAsString(buffer.toString());
