@@ -6,9 +6,9 @@ import 'package:shared/shared.dart';
 /// Generates a Flutter widget test harness file inside the **calling project**
 /// (the user's own app, not the package's example).
 ///
-/// The generated test imports the user's real app widget, navigates to the
-/// configured routes, and captures each screen via `matchesGoldenFile`.
-/// Running it with `flutter test --update-goldens` produces real screenshots.
+/// The generated test imports the user's real app widget, loads local font assets,
+/// mocks native platform channels, navigates to configured routes, and captures
+/// each screen via `matchesGoldenFile`.
 class HarnessGenerator {
   /// Creates a [HarnessGenerator].
   const HarnessGenerator();
@@ -51,6 +51,26 @@ class HarnessGenerator {
       return mainDart.readAsStringSync().contains('Hive');
     }
     return false;
+  }
+
+  /// Finds all `.ttf` and `.otf` font files in `assets/fonts/` or `assets/`.
+  List<Map<String, String>> _detectAppFonts(String projectRoot) {
+    final fonts = <Map<String, String>>[];
+    final fontsDir = Directory(p.join(projectRoot, 'assets', 'fonts'));
+    if (fontsDir.existsSync()) {
+      final entities = fontsDir.listSync(recursive: true);
+      for (final entity in entities) {
+        if (entity is File &&
+            (entity.path.endsWith('.ttf') || entity.path.endsWith('.otf'))) {
+          final filename = p.basenameWithoutExtension(entity.path);
+          // Family name is typically prefix before dash (e.g. Fredoka-Regular -> Fredoka)
+          final family = filename.split('-').first;
+          final relPath = p.relative(entity.path, from: projectRoot);
+          fonts.add({'family': family, 'path': relPath});
+        }
+      }
+    }
+    return fonts;
   }
 
   /// Reads `lib/main.dart` at [projectRoot] and returns the widget class
@@ -122,11 +142,6 @@ class HarnessGenerator {
   }
 
   /// Generates `test/marketing_screenshots_test.dart` inside [projectRoot].
-  ///
-  /// Run the generated file with:
-  /// ```dart
-  /// flutter test test/marketing_screenshots_test.dart --update-goldens
-  /// ```
   Future<File> generateHarnessScript({
     required MarketingConfig config,
     required String projectRoot,
@@ -143,6 +158,7 @@ class HarnessGenerator {
     final mainWidget = _detectMainWidget(projectRoot);
     final isRiverpod = _usesRiverpod(projectRoot);
     final isHive = _usesHive(projectRoot);
+    final appFonts = _detectAppFonts(projectRoot);
     final canImportApp = packageName != null && mainWidget != null;
 
     final routerFiles = [
@@ -199,6 +215,46 @@ class HarnessGenerator {
 
     buffer
       ..writeln()
+      ..writeln('Future<void> _loadAppFonts() async {')
+      ..writeln('  final fonts = <Map<String, String>>[');
+
+    for (final font in appFonts) {
+      buffer.writeln(
+        "    {'family': '${font['family']}', 'path': '${font['path']}'},",
+      );
+    }
+
+    buffer
+      ..writeln('  ];')
+      ..writeln('  for (final f in fonts) {')
+      ..writeln("    final file = File(f['path']!);")
+      ..writeln('    if (file.existsSync()) {')
+      ..writeln("      final loader = FontLoader(f['family']!);")
+      ..writeln('      final bytes = await file.readAsBytes();')
+      ..writeln(
+        '      loader.addFont(Future.value(ByteData.view(bytes.buffer)));',
+      )
+      ..writeln('      await loader.load();')
+      ..writeln('    }')
+      ..writeln('  }')
+      ..writeln(
+        "  final flutterRoot = Platform.environment['FLUTTER_ROOT'] ?? '';",
+      )
+      ..writeln('  if (flutterRoot.isNotEmpty) {')
+      ..writeln(
+        r"    final iconFile = File('$flutterRoot/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf');",
+      )
+      ..writeln('    if (iconFile.existsSync()) {')
+      ..writeln("      final loader = FontLoader('MaterialIcons');")
+      ..writeln('      final bytes = await iconFile.readAsBytes();')
+      ..writeln(
+        '      loader.addFont(Future.value(ByteData.view(bytes.buffer)));',
+      )
+      ..writeln('      await loader.load();')
+      ..writeln('    }')
+      ..writeln('  }')
+      ..writeln('}')
+      ..writeln()
       ..writeln('void main() {')
       ..writeln('  setUpAll(() async {')
       ..writeln('    TestWidgetsFlutterBinding.ensureInitialized();')
@@ -250,6 +306,7 @@ class HarnessGenerator {
     }
 
     buffer
+      ..writeln('    await _loadAppFonts();')
       ..writeln('  });')
       ..writeln()
       ..writeln('  testWidgets(')
@@ -311,36 +368,35 @@ class HarnessGenerator {
               ..writeln('      );')
               ..writeln('      await tester.pump();')
               ..writeln(
-                '      await tester.pump(const Duration(milliseconds: 500));',
+                '      await tester.pump(const Duration(milliseconds: 1000));',
               )
               ..writeln('      tester.takeException();');
 
             if (screen.route != '/') {
-              buffer
-                ..writeln('      try {')
-                ..writeln(
-                  // ignore: missing_whitespace_between_adjacent_strings, lines_longer_than_80_chars
-                  '        final dynamic routerObj = (find.byType(Router, skipOffstage: false).evaluate().first.widget as Router).routerDelegate;',
-                )
-                ..writeln("        routerObj.go('${screen.route}');")
-                ..writeln('      } catch (_) {')
-                ..writeln('        try {');
+              buffer.writeln('      try {');
 
               if (detectedAppRouterImport != null) {
                 buffer.writeln(
-                  "          AppRouter.router.go('${screen.route}');",
+                  "        AppRouter.router.go('${screen.route}');",
                 );
               } else {
                 buffer
                   ..writeln(
-                    // ignore: missing_whitespace_between_adjacent_strings
-                    '          final navState = tester.state<NavigatorState>'
-                    '(find.byType(Navigator, skipOffstage: false));',
+                    // ignore: missing_whitespace_between_adjacent_strings, lines_longer_than_80_chars
+                    '        final dynamic routerObj = (find.byType(Router, skipOffstage: false).evaluate().first.widget as Router).routerDelegate;',
                   )
-                  ..writeln("          navState.pushNamed('${screen.route}');");
+                  ..writeln("        routerObj.go('${screen.route}');");
               }
 
               buffer
+                ..writeln('      } catch (_) {')
+                ..writeln('        try {')
+                ..writeln(
+                  // ignore: missing_whitespace_between_adjacent_strings
+                  '          final navState = tester.state<NavigatorState>'
+                  '(find.byType(Navigator, skipOffstage: false));',
+                )
+                ..writeln("          navState.pushNamed('${screen.route}');")
                 ..writeln('        } catch (e) {')
                 ..writeln(
                   "          debugPrint('Could not navigate to "
@@ -350,7 +406,7 @@ class HarnessGenerator {
                 ..writeln('      }')
                 ..writeln('      await tester.pump();')
                 ..writeln(
-                  '      await tester.pump(const Duration(milliseconds: 500));',
+                  '      await tester.pump(const Duration(milliseconds: 1000));',
                 )
                 ..writeln('      tester.takeException();');
             }
@@ -403,7 +459,7 @@ class HarnessGenerator {
               ..writeln('      );')
               ..writeln('      await tester.pump();')
               ..writeln(
-                '      await tester.pump(const Duration(milliseconds: 500));',
+                '      await tester.pump(const Duration(milliseconds: 1000));',
               )
               ..writeln('      tester.takeException();');
           }
