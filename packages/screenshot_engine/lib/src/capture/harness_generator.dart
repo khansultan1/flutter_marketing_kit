@@ -40,6 +40,19 @@ class HarnessGenerator {
     return false;
   }
 
+  /// Checks if [projectRoot] uses Hive.
+  bool _usesHive(String projectRoot) {
+    final pubspec = File(p.join(projectRoot, 'pubspec.yaml'));
+    if (pubspec.existsSync() && pubspec.readAsStringSync().contains('hive')) {
+      return true;
+    }
+    final mainDart = File(p.join(projectRoot, 'lib', 'main.dart'));
+    if (mainDart.existsSync()) {
+      return mainDart.readAsStringSync().contains('Hive');
+    }
+    return false;
+  }
+
   /// Reads `lib/main.dart` at [projectRoot] and returns the widget class
   /// passed to `runApp(...)` or defined as the main app.
   String? _detectMainWidget(String projectRoot) {
@@ -129,6 +142,7 @@ class HarnessGenerator {
     final packageName = _detectPackageName(projectRoot);
     final mainWidget = _detectMainWidget(projectRoot);
     final isRiverpod = _usesRiverpod(projectRoot);
+    final isHive = _usesHive(projectRoot);
     final canImportApp = packageName != null && mainWidget != null;
 
     final buffer = StringBuffer()
@@ -138,20 +152,89 @@ class HarnessGenerator {
         ' --update-goldens',
       )
       ..writeln()
+      ..writeln("import 'dart:io';")
       ..writeln("import 'package:flutter/material.dart';")
+      ..writeln("import 'package:flutter/services.dart';")
       ..writeln("import 'package:flutter_test/flutter_test.dart';");
 
     if (isRiverpod) {
-      buffer.writeln("import 'package:flutter_riverpod/flutter_riverpod.dart';");
+      buffer.writeln(
+        "import 'package:flutter_riverpod/flutter_riverpod.dart';",
+      );
+    }
+
+    if (isHive) {
+      buffer.writeln("import 'package:hive_flutter/hive_flutter.dart';");
     }
 
     if (canImportApp) {
       buffer.writeln("import 'package:$packageName/main.dart';");
+      // Check if HiveService exists in app
+      final hiveServiceFile = File(
+        p.join(projectRoot, 'lib', 'core', 'services', 'hive_service.dart'),
+      );
+      if (hiveServiceFile.existsSync()) {
+        buffer.writeln(
+          "import 'package:$packageName/core/services/hive_service.dart';",
+        );
+      }
     }
 
     buffer
       ..writeln()
       ..writeln('void main() {')
+      ..writeln('  setUpAll(() async {')
+      ..writeln('    TestWidgetsFlutterBinding.ensureInitialized();')
+      ..writeln(
+        '    final tempDir = '
+      "await Directory.systemTemp.createTemp('marketing_harness_');",
+      )
+      ..writeln(
+        '    final messenger = '
+        'TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;',
+      )
+      ..writeln('    messenger.setMockMethodCallHandler(')
+      ..writeln("      const MethodChannel('plugins.flutter.io/path_provider'),")
+      ..writeln('      (MethodCall methodCall) async => tempDir.path,')
+      ..writeln('    );')
+      ..writeln('    messenger.setMockMethodCallHandler(')
+      ..writeln(
+        "      const MethodChannel('plugins.flutter.io/path_provider_macos'),",
+      )
+      ..writeln('      (MethodCall methodCall) async => tempDir.path,')
+      ..writeln('    );')
+      ..writeln('    messenger.setMockMethodCallHandler(')
+      ..writeln("      const MethodChannel('xyz.luan/audioplayers.global'),")
+      ..writeln('      (MethodCall methodCall) async => null,')
+      ..writeln('    );')
+      ..writeln('    messenger.setMockMethodCallHandler(')
+      ..writeln("      const MethodChannel('xyz.luan/audioplayers'),")
+      ..writeln('      (MethodCall methodCall) async => null,')
+      ..writeln('    );')
+      ..writeln('    messenger.setMockMethodCallHandler(')
+      ..writeln(
+        "      const MethodChannel('plugins.flutter.io/shared_preferences'),",
+      )
+      ..writeln('      (MethodCall methodCall) async => <String, dynamic>{},')
+      ..writeln('    );');
+
+    if (isHive) {
+      buffer
+        ..writeln('    try {')
+        ..writeln('      Hive.init(tempDir.path);')
+        ..writeln("      await Hive.openBox('progress_box');")
+        ..writeln("      await Hive.openBox('settings_box');")
+        ..writeln("      await Hive.openBox('learning_box');")
+        ..writeln("      await Hive.openBox('analytics_box');")
+        ..writeln('    } catch (_) {}')
+        ..writeln('    try {')
+        ..writeln('      await HiveService().init();')
+        ..writeln('    } catch (_) {}');
+    }
+
+    buffer
+      ..writeln('  });')
+      ..writeln()
       ..writeln('  testWidgets(')
       ..writeln("    'Marketing Screenshots',")
       ..writeln('    (WidgetTester tester) async {')
@@ -210,37 +293,43 @@ class HarnessGenerator {
               ..writeln('      await tester.pumpWidget(')
               ..writeln('        RepaintBoundary(')
               ..writeln('          key: $keyName,')
-              ..writeln('          child: $appWidget,')
+              ..writeln('          child: const $appWidget,')
               ..writeln('        ),')
               ..writeln('      );')
-              ..writeln('      await tester.pumpAndSettle();');
+              ..writeln('      await tester.pump();')
+              ..writeln(
+                '      await tester.pump(const Duration(milliseconds: 500));',
+              )
+              ..writeln('      tester.takeException();');
 
             if (screen.route != '/') {
               buffer
                 ..writeln('      try {')
                 ..writeln(
-                  // ignore: missing_whitespace_between_adjacent_strings
-                  '        tester.state<NavigatorState>'
-                  '(find.byType(Navigator))',
+                  // ignore: missing_whitespace_between_adjacent_strings, lines_longer_than_80_chars
+                  '        final dynamic routerObj = (find.byType(Router, skipOffstage: false).evaluate().first.widget as Router).routerDelegate;',
                 )
-                ..writeln("          .pushNamed('${screen.route}');")
-                ..writeln('        await tester.pumpAndSettle();')
+                ..writeln("        routerObj.go('${screen.route}');")
                 ..writeln('      } catch (_) {')
                 ..writeln('        try {')
                 ..writeln(
                   // ignore: missing_whitespace_between_adjacent_strings
-                  '          final dynamic routerObj = (find.byType(Router)'
-                  '.evaluate().first.widget as Router).routerDelegate;',
+                  '          final navState = tester.state<NavigatorState>'
+                  '(find.byType(Navigator, skipOffstage: false));',
                 )
-                ..writeln("          routerObj.go('${screen.route}');")
-                ..writeln('          await tester.pumpAndSettle();')
+                ..writeln("          navState.pushNamed('${screen.route}');")
                 ..writeln('        } catch (e) {')
                 ..writeln(
                   "          debugPrint('Could not navigate to "
                   "${screen.route}: \$e');",
                 )
                 ..writeln('        }')
-                ..writeln('      }');
+                ..writeln('      }')
+                ..writeln('      await tester.pump();')
+                ..writeln(
+                  '      await tester.pump(const Duration(milliseconds: 500));',
+                )
+                ..writeln('      tester.takeException();');
             }
           } else {
             // Fallback: can't import app — render a labelled placeholder
@@ -290,7 +379,11 @@ class HarnessGenerator {
               ..writeln('          ),')
               ..writeln('        ),')
               ..writeln('      );')
-              ..writeln('      await tester.pumpAndSettle();');
+              ..writeln('      await tester.pump();')
+              ..writeln(
+                '      await tester.pump(const Duration(milliseconds: 500));',
+              )
+              ..writeln('      tester.takeException();');
           }
 
           // Capture via golden matcher
@@ -305,6 +398,7 @@ class HarnessGenerator {
     }
 
     buffer
+      ..writeln('      await tester.pump(const Duration(days: 999));')
       ..writeln('    },')
       ..writeln('  );')
       ..writeln('}');
