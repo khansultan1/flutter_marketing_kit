@@ -74,22 +74,66 @@ class HarnessGenerator {
             ..writeln('        debugShowCheckedModeBanner: false,')
             ..writeln('        home: RepaintBoundary(')
             ..writeln('          key: key_$screenId,')
-            ..writeln('          child: Scaffold(')
-            ..writeln('            appBar: AppBar(title: '
-                'Text("${screen.title}")),')
-            ..writeln('            body: Center(')
-            ..writeln('              child: Column(')
-            ..writeln('                mainAxisAlignment: '
-                'MainAxisAlignment.center,')
-            ..writeln('                children: [')
-            ..writeln('                  Icon(Icons.stars, size: 80, '
-                'color: Color(0xFF5E5CE6)),')
-            ..writeln('                  SizedBox(height: 16),')
-            ..writeln('                  Text("${screen.title}", style: '
-                'TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),')
-            ..writeln('                  SizedBox(height: 8),')
-            ..writeln('                  Text("$subText"),')
-            ..writeln('                ],')
+            ..writeln('          child: Container(')
+            ..writeln('            decoration: const BoxDecoration(')
+            ..writeln('              gradient: LinearGradient(')
+            ..writeln('                begin: Alignment.topCenter,')
+            ..writeln('                end: Alignment.bottomCenter,')
+            ..writeln('                colors: [Color(0xFF4E46E5), '
+                'Color(0xFF06B6D4)],')
+            ..writeln('              ),')
+            ..writeln('            ),')
+            ..writeln('            child: Scaffold(')
+            ..writeln('              backgroundColor: Colors.transparent,')
+            ..writeln('              appBar: AppBar(')
+            ..writeln('                backgroundColor: Colors.black26,')
+            ..writeln('                elevation: 0,')
+            ..writeln('                title: Text("${screen.title}", '
+                'style: const TextStyle(color: Colors.white)),')
+            ..writeln('              ),')
+            ..writeln('              body: Center(')
+            ..writeln('                child: Padding(')
+            ..writeln('                  padding: const EdgeInsets.all(24.0),')
+            ..writeln('                  child: Card(')
+            ..writeln('                    elevation: 8,')
+            ..writeln('                    shape: RoundedRectangleBorder(')
+            ..writeln('                      borderRadius: '
+                'BorderRadius.circular(16),')
+            ..writeln('                    ),')
+            ..writeln('                    child: Padding(')
+            ..writeln('                      padding: const '
+                'EdgeInsets.all(32.0),')
+            ..writeln('                      child: Column(')
+            ..writeln('                        mainAxisSize: '
+                'MainAxisSize.min,')
+            ..writeln('                        children: [')
+            ..writeln('                          const Icon(Icons.stars, '
+                'size: 80, color: Color(0xFF4E46E5)),')
+            ..writeln('                          const SizedBox(height: 16),')
+            ..writeln('                          Text("${screen.title}", '
+                'style: const TextStyle(fontSize: 24, fontWeight: '
+                'FontWeight.bold, color: Color(0xFF1E293B))),')
+            ..writeln('                          const SizedBox(height: 8),')
+            ..writeln('                          Text("$subText", style: '
+                'const TextStyle(fontSize: 16, color: Color(0xFF64748B))),')
+            ..writeln('                          const SizedBox(height: 24),')
+            ..writeln('                          ElevatedButton(')
+            ..writeln('                            style: '
+                'ElevatedButton.styleFrom(')
+            ..writeln('                              backgroundColor: '
+                'const Color(0xFF4E46E5),')
+            ..writeln('                              foregroundColor: '
+                'Colors.white,')
+            ..writeln('                            ),')
+            ..writeln('                            onPressed: () {},')
+            ..writeln('                            child: '
+                'Text("Explore ${screen.title}"),')
+            ..writeln('                          ),')
+            ..writeln('                        ],')
+            ..writeln('                      ),')
+            ..writeln('                    ),')
+            ..writeln('                  ),')
+            ..writeln('                ),')
             ..writeln('              ),')
             ..writeln('            ),')
             ..writeln('          ),')

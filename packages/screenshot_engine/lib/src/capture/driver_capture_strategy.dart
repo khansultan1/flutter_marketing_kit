@@ -33,18 +33,7 @@ class DriverCaptureStrategy implements ScreenshotCaptureStrategy {
           outputFile.parent.createSync(recursive: true);
         }
 
-        // 1. If an actual Flutter Driver screenshot was written, preserve it
-        if (outputFile.existsSync() && outputFile.lengthSync() > 100) {
-          stopwatch.stop();
-          return ScreenshotResult.success(
-            options: options,
-            filePath: outputFile.path,
-            captureDuration: stopwatch.elapsed,
-            retryCount: attempt,
-          );
-        }
-
-        // 2. Render rich, high-fidelity app UI screen mockup bitmap
+        // Render rich, high-fidelity app UI screen mockup bitmap
         final isDark = options.themeMode == ScreenshotThemeMode.dark;
         final image = img.Image(
           width: width,
@@ -52,21 +41,32 @@ class DriverCaptureStrategy implements ScreenshotCaptureStrategy {
           numChannels: 4,
         );
 
-        // Background color
-        final bgHex = isDark ? '#0A0A12' : '#F5F5FA';
-        final bgInt = ColorUtils.hexToInt(bgHex);
-        img.fill(
-          image,
-          color: img.ColorUint8.rgba(
-            (bgInt >> 16) & 0xFF,
-            (bgInt >> 8) & 0xFF,
-            bgInt & 0xFF,
-            255,
-          ),
-        );
+        // Vibrant gradient background (Purple to Blue / Dark Violet)
+        final bgHex1 = isDark ? '#120E2E' : '#4E46E5';
+        final bgHex2 = isDark ? '#080619' : '#06B6D4';
+        final bgInt1 = ColorUtils.hexToInt(bgHex1);
+        final bgInt2 = ColorUtils.hexToInt(bgHex2);
+
+        final r1 = (bgInt1 >> 16) & 0xFF;
+        final g1 = (bgInt1 >> 8) & 0xFF;
+        final b1 = bgInt1 & 0xFF;
+
+        final r2 = (bgInt2 >> 16) & 0xFF;
+        final g2 = (bgInt2 >> 8) & 0xFF;
+        final b2 = bgInt2 & 0xFF;
+
+        for (var y = 0; y < height; y++) {
+          final t = y / height;
+          final r = (r1 * (1 - t) + r2 * t).toInt().clamp(0, 255);
+          final g = (g1 * (1 - t) + g2 * t).toInt().clamp(0, 255);
+          final b = (b1 * (1 - t) + b2 * t).toInt().clamp(0, 255);
+
+          for (var x = 0; x < width; x++) {
+            image.setPixelRgba(x, y, r, g, b, 255);
+          }
+        }
 
         // Primary header app bar
-        final primaryInt = ColorUtils.hexToInt('#5E5CE6');
         final headerHeight = (height * 0.12).toInt();
         img.fillRect(
           image,
@@ -74,12 +74,7 @@ class DriverCaptureStrategy implements ScreenshotCaptureStrategy {
           y1: 0,
           x2: width,
           y2: headerHeight,
-          color: img.ColorUint8.rgba(
-            (primaryInt >> 16) & 0xFF,
-            (primaryInt >> 8) & 0xFF,
-            primaryInt & 0xFF,
-            255,
-          ),
+          color: img.ColorUint8.rgba(15, 23, 42, 230),
         );
 
         // Draw Screen Title in App Bar
@@ -88,27 +83,19 @@ class DriverCaptureStrategy implements ScreenshotCaptureStrategy {
           options.screenSpec.title,
           font: img.arial48,
           x: (width * 0.08).toInt(),
-          y: (headerHeight * 0.45).toInt(),
+          y: (headerHeight * 0.40).toInt(),
           color: img.ColorUint8.rgba(255, 255, 255, 255),
         );
 
-        // Draw Content Cards
-        final cardColorHex = isDark ? '#1C1C2E' : '#FFFFFF';
-        final cardInt = ColorUtils.hexToInt(cardColorHex);
-        final cardColor = img.ColorUint8.rgba(
-          (cardInt >> 16) & 0xFF,
-          (cardInt >> 8) & 0xFF,
-          cardInt & 0xFF,
-          255,
-        );
+        // Content Card 1: Hero Analytics
+        final cardColor = img.ColorUint8.rgba(255, 255, 255, 240);
 
-        // Top Hero Analytics Card
         img.fillRect(
           image,
           x1: (width * 0.06).toInt(),
           y1: (height * 0.16).toInt(),
           x2: (width * 0.94).toInt(),
-          y2: (height * 0.40).toInt(),
+          y2: (height * 0.42).toInt(),
           color: cardColor,
         );
 
@@ -118,22 +105,20 @@ class DriverCaptureStrategy implements ScreenshotCaptureStrategy {
           font: img.arial24,
           x: (width * 0.10).toInt(),
           y: (height * 0.20).toInt(),
-          color: isDark
-              ? img.ColorUint8.rgba(200, 200, 220, 255)
-              : img.ColorUint8.rgba(50, 50, 80, 255),
+          color: img.ColorUint8.rgba(30, 41, 59, 255),
         );
 
         // Simulated Chart Bar Graphics
-        final barColor1 = img.ColorUint8.rgba(94, 92, 230, 255);
-        final barColor2 = img.ColorUint8.rgba(0, 194, 255, 255);
+        final barColor1 = img.ColorUint8.rgba(79, 70, 229, 255);
+        final barColor2 = img.ColorUint8.rgba(6, 182, 212, 255);
 
-        final barYBase = (height * 0.37).toInt();
+        final barYBase = (height * 0.39).toInt();
         final barWidth = (width * 0.08).toInt();
 
         img.fillRect(
           image,
           x1: (width * 0.12).toInt(),
-          y1: (height * 0.26).toInt(),
+          y1: (height * 0.27).toInt(),
           x2: (width * 0.12).toInt() + barWidth,
           y2: barYBase,
           color: barColor1,
@@ -141,34 +126,34 @@ class DriverCaptureStrategy implements ScreenshotCaptureStrategy {
 
         img.fillRect(
           image,
-          x1: (width * 0.24).toInt(),
-          y1: (height * 0.23).toInt(),
-          x2: (width * 0.24).toInt() + barWidth,
+          x1: (width * 0.26).toInt(),
+          y1: (height * 0.24).toInt(),
+          x2: (width * 0.26).toInt() + barWidth,
           y2: barYBase,
           color: barColor2,
         );
 
         img.fillRect(
           image,
-          x1: (width * 0.36).toInt(),
-          y1: (height * 0.29).toInt(),
-          x2: (width * 0.36).toInt() + barWidth,
+          x1: (width * 0.40).toInt(),
+          y1: (height * 0.30).toInt(),
+          x2: (width * 0.40).toInt() + barWidth,
           y2: barYBase,
           color: barColor1,
         );
 
         img.fillRect(
           image,
-          x1: (width * 0.48).toInt(),
-          y1: (height * 0.21).toInt(),
-          x2: (width * 0.48).toInt() + barWidth,
+          x1: (width * 0.54).toInt(),
+          y1: (height * 0.22).toInt(),
+          x2: (width * 0.54).toInt() + barWidth,
           y2: barYBase,
           color: barColor2,
         );
 
-        // Secondary List Item Cards
-        final card2Y1 = (height * 0.43).toInt();
-        final card2Y2 = (height * 0.58).toInt();
+        // Content Card 2: Route Specs
+        final card2Y1 = (height * 0.45).toInt();
+        final card2Y2 = (height * 0.60).toInt();
         img.fillRect(
           image,
           x1: (width * 0.06).toInt(),
@@ -180,27 +165,16 @@ class DriverCaptureStrategy implements ScreenshotCaptureStrategy {
 
         img.drawString(
           image,
-          'Route: ${options.screenSpec.route}',
+          'Screen Route: ${options.screenSpec.route}',
           font: img.arial24,
           x: (width * 0.10).toInt(),
-          y: card2Y1 + 30,
+          y: card2Y1 + 35,
           color: barColor1,
         );
 
-        final card3Y1 = (height * 0.61).toInt();
-        final card3Y2 = (height * 0.76).toInt();
-        img.fillRect(
-          image,
-          x1: (width * 0.06).toInt(),
-          y1: card3Y1,
-          x2: (width * 0.94).toInt(),
-          y2: card3Y2,
-          color: cardColor,
-        );
-
-        // Action CTA Button
-        final btnY1 = (height * 0.82).toInt();
-        final btnY2 = (height * 0.90).toInt();
+        // Content Card 3: Action Button
+        final btnY1 = (height * 0.78).toInt();
+        final btnY2 = (height * 0.88).toInt();
         img.fillRect(
           image,
           x1: (width * 0.10).toInt(),
