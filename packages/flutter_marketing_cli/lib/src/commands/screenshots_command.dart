@@ -22,7 +22,7 @@ class ScreenshotsCommand extends Command<int> {
 
   @override
   String get description =>
-      'Capture raw application screen captures via drivers.';
+      'Capture raw application screen captures via headless harness.';
 
   @override
   Future<int> run() async {
@@ -38,9 +38,26 @@ class ScreenshotsCommand extends Command<int> {
     const parser = YamlConfigParser();
     final config = parser.parse(await configFile.readAsString());
 
-    stdout.writeln('📸 Capturing application screen shots...');
-    const engine = ScreenshotEngine();
-    final results = await engine.captureBatch(config);
+    const generator = HarnessGenerator();
+    final harnessFile = await generator.generateHarnessScript(
+      config: config,
+      projectRoot: Directory.current.path,
+    );
+    stdout
+      ..writeln('📸 Generating headless widget test harness...')
+      ..writeln('   Created harness: ${harnessFile.path}')
+      ..writeln('📸 Capturing application screenshots...');
+
+    const goldenStrategy = GoldenCaptureStrategy();
+    var results = await goldenStrategy.captureWithHarness(
+      config,
+      projectRoot: Directory.current.path,
+    );
+
+    if (results.isEmpty) {
+      const engine = ScreenshotEngine();
+      results = await engine.captureBatch(config);
+    }
 
     final successCount = results.where((r) => r.isSuccess).length;
     stdout.writeln(

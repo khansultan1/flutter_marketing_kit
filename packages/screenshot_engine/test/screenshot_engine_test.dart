@@ -38,6 +38,36 @@ void main() {
     });
   });
 
+  group('HarnessGenerator tests', () {
+    test('generates valid Flutter WidgetTester harness test file', () async {
+      const generator = HarnessGenerator();
+      const config = MarketingConfig(
+        appName: 'TestApp',
+        packageName: 'com.example.test',
+        outputDirectory: 'test_marketing_out',
+        theme: 'modern',
+        template: 'gaming',
+        primaryColor: '#5E5CE6',
+        accentColor: '#00C2FF',
+        devices: ['pixel9'],
+        languages: ['en'],
+        screens: {
+          'home': ScreenSpec(id: 'home', route: '/', title: 'Home'),
+        },
+      );
+
+      final file = await generator.generateHarnessScript(
+        config: config,
+        projectRoot: Directory.systemTemp.createTempSync('harness_test').path,
+      );
+
+      expect(file.existsSync(), isTrue);
+      final content = await file.readAsString();
+      expect(content, contains('WidgetTester tester'));
+      expect(content, contains('setSurfaceSize'));
+    });
+  });
+
   group('ScreenshotEngine tests', () {
     test('captures single screenshot successfully', () async {
       const engine = ScreenshotEngine();
