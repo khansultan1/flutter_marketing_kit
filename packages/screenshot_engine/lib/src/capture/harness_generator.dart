@@ -53,6 +53,16 @@ class HarnessGenerator {
     return false;
   }
 
+  /// Checks if [projectRoot] uses flutter_animate.
+  bool _usesFlutterAnimate(String projectRoot) {
+    final pubspec = File(p.join(projectRoot, 'pubspec.yaml'));
+    if (pubspec.existsSync() &&
+        pubspec.readAsStringSync().contains('flutter_animate')) {
+      return true;
+    }
+    return false;
+  }
+
   /// Finds all `.ttf` and `.otf` font files in `assets/fonts/` or `assets/`.
   List<Map<String, String>> _detectAppFonts(String projectRoot) {
     final fonts = <Map<String, String>>[];
@@ -63,7 +73,6 @@ class HarnessGenerator {
         if (entity is File &&
             (entity.path.endsWith('.ttf') || entity.path.endsWith('.otf'))) {
           final filename = p.basenameWithoutExtension(entity.path);
-          // Family name is typically prefix before dash (e.g. Fredoka-Regular -> Fredoka)
           final family = filename.split('-').first;
           final relPath = p.relative(entity.path, from: projectRoot);
           fonts.add({'family': family, 'path': relPath});
@@ -158,6 +167,7 @@ class HarnessGenerator {
     final mainWidget = _detectMainWidget(projectRoot);
     final isRiverpod = _usesRiverpod(projectRoot);
     final isHive = _usesHive(projectRoot);
+    final isFlutterAnimate = _usesFlutterAnimate(projectRoot);
     final appFonts = _detectAppFonts(projectRoot);
     final canImportApp = packageName != null && mainWidget != null;
 
@@ -198,6 +208,12 @@ class HarnessGenerator {
       buffer.writeln("import 'package:hive_flutter/hive_flutter.dart';");
     }
 
+    if (isFlutterAnimate) {
+      buffer.writeln(
+        "import 'package:flutter_animate/flutter_animate.dart';",
+      );
+    }
+
     if (canImportApp) {
       buffer.writeln("import 'package:$packageName/main.dart';");
       if (detectedAppRouterImport != null) {
@@ -221,6 +237,13 @@ class HarnessGenerator {
     for (final font in appFonts) {
       buffer.writeln(
         "    {'family': '${font['family']}', 'path': '${font['path']}'},",
+      );
+    }
+    // Alias missing 'Dongol' font to Cairo-Bold if Cairo exists
+    final cairoFile = File(p.join(projectRoot, 'assets', 'fonts', 'Cairo-Bold.ttf'));
+    if (cairoFile.existsSync()) {
+      buffer.writeln(
+        "    {'family': 'Dongol', 'path': 'assets/fonts/Cairo-Bold.ttf'},",
       );
     }
 
@@ -257,7 +280,13 @@ class HarnessGenerator {
       ..writeln()
       ..writeln('void main() {')
       ..writeln('  setUpAll(() async {')
-      ..writeln('    TestWidgetsFlutterBinding.ensureInitialized();')
+      ..writeln('    TestWidgetsFlutterBinding.ensureInitialized();');
+
+    if (isFlutterAnimate) {
+      buffer.writeln('    Animate.defaultDuration = Duration.zero;');
+    }
+
+    buffer
       ..writeln(
         '    final tempDir = '
         "await Directory.systemTemp.createTemp('marketing_harness_');",
@@ -315,36 +344,27 @@ class HarnessGenerator {
       ..writeln('      final binding = tester.binding;')
       ..writeln();
 
-    for (final deviceId in config.devices) {
-      final deviceSpec = DeviceSpec.findById(deviceId);
-      if (deviceSpec == null) continue;
+    if (canImportApp) {
+      final appWidget = isRiverpod
+          ? 'ProviderScope(child: $mainWidget())'
+          : '$mainWidget()';
 
-      final width = deviceSpec.width;
-      final height = deviceSpec.height;
-      final ratio = deviceSpec.pixelRatio;
+      for (final deviceId in config.devices) {
+        final deviceSpec = DeviceSpec.findById(deviceId);
+        if (deviceSpec == null) continue;
 
-      for (final locale in config.languages) {
-        for (final entry in config.screens.entries) {
-          final screenId = entry.key;
-          final screen = entry.value;
+        final width = deviceSpec.width;
+        final height = deviceSpec.height;
+        final ratio = deviceSpec.pixelRatio;
 
-          final outputPath = p.join(
-            config.outputDirectory,
-            'raw_screenshots',
-            locale,
-            deviceSpec.id,
-            '${deviceSpec.id}_${screenId}_$locale.png',
-          );
-
-          final goldenPath = p.join('..', outputPath);
-          final keyName = 'key_${deviceSpec.id}_${screenId}_$locale'
-              .replaceAll('-', '_');
+        for (final locale in config.languages) {
+          final rootKey = 'rootKey_${deviceSpec.id}_$locale'.replaceAll('-', '_');
 
           buffer
             ..writeln(
               // ignore: missing_whitespace_between_adjacent_strings
               '      // ---'
-              ' ${deviceSpec.name} | $screenId | $locale ---',
+              ' ${deviceSpec.name} | $locale ---',
             )
             ..writeln(
               // ignore: missing_whitespace_between_adjacent_strings
@@ -352,25 +372,34 @@ class HarnessGenerator {
               'const Size($width, $height));',
             )
             ..writeln('      tester.view.devicePixelRatio = $ratio;')
-            ..writeln('      final $keyName = GlobalKey();');
+            ..writeln('      final $rootKey = GlobalKey();')
+            ..writeln('      await tester.pumpWidget(')
+            ..writeln('        ProviderScope(')
+            ..writeln('          child: RepaintBoundary(')
+            ..writeln('            key: $rootKey,')
+            ..writeln('            child: const $appWidget,')
+            ..writeln('          ),')
+            ..writeln('        ),')
+            ..writeln('      );')
+            ..writeln('      await tester.pump();')
+            ..writeln(
+              '      await tester.pump(const Duration(milliseconds: 3000));',
+            )
+            ..writeln('      tester.takeException();');
 
-          if (canImportApp) {
-            final appWidget = isRiverpod
-                ? 'ProviderScope(child: $mainWidget())'
-                : '$mainWidget()';
+          for (final entry in config.screens.entries) {
+            final screenId = entry.key;
+            final screen = entry.value;
 
-            buffer
-              ..writeln('      await tester.pumpWidget(')
-              ..writeln('        RepaintBoundary(')
-              ..writeln('          key: $keyName,')
-              ..writeln('          child: const $appWidget,')
-              ..writeln('        ),')
-              ..writeln('      );')
-              ..writeln('      await tester.pump();')
-              ..writeln(
-                '      await tester.pump(const Duration(milliseconds: 1000));',
-              )
-              ..writeln('      tester.takeException();');
+            final outputPath = p.join(
+              config.outputDirectory,
+              'raw_screenshots',
+              locale,
+              deviceSpec.id,
+              '${deviceSpec.id}_${screenId}_$locale.png',
+            );
+
+            final goldenPath = p.join('..', outputPath);
 
             if (screen.route != '/') {
               buffer.writeln('      try {');
@@ -406,13 +435,54 @@ class HarnessGenerator {
                 ..writeln('      }')
                 ..writeln('      await tester.pump();')
                 ..writeln(
-                  '      await tester.pump(const Duration(milliseconds: 1000));',
+                  '      await tester.pump(const Duration(milliseconds: 3000));',
                 )
                 ..writeln('      tester.takeException();');
             }
-          } else {
+
+            buffer
+              ..writeln('      await expectLater(')
+              ..writeln('        find.byKey($rootKey),')
+              ..writeln("        matchesGoldenFile('$goldenPath'),")
+              ..writeln('      );')
+              ..writeln();
+          }
+        }
+      }
+    } else {
+      // Fallback: can't import app — render labelled placeholders
+      for (final deviceId in config.devices) {
+        final deviceSpec = DeviceSpec.findById(deviceId);
+        if (deviceSpec == null) continue;
+
+        final width = deviceSpec.width;
+        final height = deviceSpec.height;
+        final ratio = deviceSpec.pixelRatio;
+
+        for (final locale in config.languages) {
+          for (final entry in config.screens.entries) {
+            final screenId = entry.key;
+            final screen = entry.value;
+
+            final outputPath = p.join(
+              config.outputDirectory,
+              'raw_screenshots',
+              locale,
+              deviceSpec.id,
+              '${deviceSpec.id}_${screenId}_$locale.png',
+            );
+
+            final goldenPath = p.join('..', outputPath);
+            final keyName = 'key_${deviceSpec.id}_${screenId}_$locale'
+                .replaceAll('-', '_');
+
             final subtitle = screen.subtitle ?? screen.route;
             buffer
+              ..writeln(
+                '      await binding.setSurfaceSize('
+                'const Size($width, $height));',
+              )
+              ..writeln('      tester.view.devicePixelRatio = $ratio;')
               ..writeln('      await tester.pumpWidget(')
               ..writeln('        MaterialApp(')
               ..writeln('          debugShowCheckedModeBanner: false,')
@@ -459,17 +529,15 @@ class HarnessGenerator {
               ..writeln('      );')
               ..writeln('      await tester.pump();')
               ..writeln(
-                '      await tester.pump(const Duration(milliseconds: 1000));',
+                '      await tester.pump(const Duration(milliseconds: 3000));',
               )
-              ..writeln('      tester.takeException();');
+              ..writeln('      tester.takeException();')
+              ..writeln('      await expectLater(')
+              ..writeln('        find.byKey($keyName),')
+              ..writeln("        matchesGoldenFile('$goldenPath'),")
+              ..writeln('      );')
+              ..writeln();
           }
-
-          buffer
-            ..writeln('      await expectLater(')
-            ..writeln('        find.byKey($keyName),')
-            ..writeln("        matchesGoldenFile('$goldenPath'),")
-            ..writeln('      );')
-            ..writeln();
         }
       }
     }
