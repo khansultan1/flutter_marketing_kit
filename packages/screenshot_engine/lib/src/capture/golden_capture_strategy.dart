@@ -31,7 +31,11 @@ class GoldenCaptureStrategy extends DriverCaptureStrategy {
 
       final processResult = await Process.run(
         'flutter',
-        ['test', p.relative(harnessFile.path, from: projectRoot)],
+        [
+          'test',
+          '--update-goldens',
+          p.relative(harnessFile.path, from: projectRoot),
+        ],
         workingDirectory: projectRoot,
       );
 
@@ -43,7 +47,7 @@ class GoldenCaptureStrategy extends DriverCaptureStrategy {
             if (deviceSpec != null) {
               for (final entry in config.screens.entries) {
                 final screenSpec = entry.value;
-                final fileName = 'screen_${entry.key}.png';
+                final fileName = '${deviceSpec.id}_${entry.key}_$lang.png';
                 final filePath = p.canonicalize(
                   p.join(
                     config.outputDirectory,

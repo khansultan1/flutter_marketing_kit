@@ -1,0 +1,41 @@
+# ==============================================================================
+# FLUTTER MARKETING KIT CONFIGURATION
+# Generated for testing the example app routing
+# ==============================================================================
+
+# General Application Information
+app_name: Expense AI Example
+package_name: com.example
+output_directory: marketing
+
+# Visual Design Theme and Preset
+theme: modern
+template: gaming
+
+# Branding Colors (HEX Format)
+primary_color: "#5E5CE6"
+accent_color: "#00C2FF"
+
+# Target Devices for Framing and Screenshots
+devices:
+  - pixel9
+  - iphone16
+
+# Localization Locales
+languages:
+  - en
+
+# Target Application Routes & Screenshot Captions
+screens:
+  home:
+    route: /
+    title: Home Screen
+    subtitle: Dashboard
+  premium:
+    route: /premium
+    title: Premium Features
+    subtitle: Go Pro
+  settings:
+    route: /settings
+    title: Custom Settings
+    subtitle: Preferences
