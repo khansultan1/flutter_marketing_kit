@@ -88,14 +88,28 @@ class GenerateCommand extends Command<int> {
     const exporter = AssetExporter();
 
     // 1. Screenshots
-    final screenCount = config.screens.length * config.devices.length;
-    stdout
-      ..writeln('\n📸 Step 1/6: Capturing raw screenshots...')
-      ..writeln('   Captured $screenCount screens.');
-    final screenshotResults = await screenshotEngine.captureBatch(config);
+    stdout.writeln('\n📸 Step 1/6: Capturing raw screenshots...');
 
-    // 2. Framing
-    stdout.writeln('\n🖼️ Step 2/6: Rendering SVG device hardware mockups...');
+    const goldenStrategy = GoldenCaptureStrategy();
+    var screenshotResults = await goldenStrategy.captureWithHarness(
+      config,
+      projectRoot: Directory.current.path,
+    );
+
+    if (screenshotResults.isEmpty) {
+      stdout.writeln(
+        '   ⚠️ Headless test capture failed or skipped, '
+        'falling back to static templates...',
+      );
+      screenshotResults = await screenshotEngine.captureBatch(config);
+    }
+
+    final successCount = screenshotResults.where((r) => r.isSuccess).length;
+    stdout
+      ..writeln(
+        '   Captured $successCount of ${screenshotResults.length} screens.',
+      )
+      ..writeln('\n🖼️ Step 2/6: Rendering SVG device hardware mockups...');
     var frameCount = 0;
     for (final res in screenshotResults) {
       if (res.isSuccess && res.filePath != null) {

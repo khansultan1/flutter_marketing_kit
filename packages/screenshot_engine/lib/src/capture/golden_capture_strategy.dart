@@ -23,6 +23,16 @@ class GoldenCaptureStrategy extends DriverCaptureStrategy {
   }) async {
     const generator = HarnessGenerator();
 
+    // Auto-detect if we should run inside an "example" subdirectory
+    var effectiveProjectRoot = projectRoot;
+    if (!File(p.join(effectiveProjectRoot, 'lib', 'main.dart')).existsSync()) {
+      final exampleDir = Directory(p.join(effectiveProjectRoot, 'example'));
+      if (exampleDir.existsSync() &&
+          File(p.join(exampleDir.path, 'lib', 'main.dart')).existsSync()) {
+        effectiveProjectRoot = exampleDir.path;
+      }
+    }
+
     try {
       final harnessFile = await generator.generateHarnessScript(
         config: config,
@@ -34,9 +44,9 @@ class GoldenCaptureStrategy extends DriverCaptureStrategy {
         [
           'test',
           '--update-goldens',
-          p.relative(harnessFile.path, from: projectRoot),
+          p.relative(harnessFile.path, from: effectiveProjectRoot),
         ],
-        workingDirectory: projectRoot,
+        workingDirectory: effectiveProjectRoot,
       );
 
       if (processResult.exitCode == 0) {
@@ -77,9 +87,20 @@ class GoldenCaptureStrategy extends DriverCaptureStrategy {
           }
         }
         return results;
+      } else {
+        // Print the compilation or test errors explicitly to the user
+        stderr
+          ..writeln(
+            '❌ Flutter test execution failed inside $effectiveProjectRoot '
+            '(exit code: ${processResult.exitCode})',
+          )
+          ..writeln('--- stdout ---')
+          ..writeln(processResult.stdout)
+          ..writeln('--- stderr ---')
+          ..writeln(processResult.stderr);
       }
-    } catch (_) {
-      // Fallback cleanly if flutter executable is not present
+    } catch (e) {
+      stderr.writeln('❌ Error running headless test harness capture: $e');
     }
 
     return [];
