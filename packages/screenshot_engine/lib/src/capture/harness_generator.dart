@@ -226,6 +226,9 @@ class HarnessGenerator {
         ? _detectAllScreens(projectRoot, packageName)
         : <String, DetectedScreen>{};
 
+    final hasHiveService = packageName != null &&
+        File(p.join(projectRoot, 'lib', 'core', 'services', 'hive_service.dart')).existsSync();
+
     final canImportApp = packageName != null && mainWidget != null;
 
     final buffer = StringBuffer()
@@ -275,10 +278,7 @@ class HarnessGenerator {
       }
     }
 
-    final hiveServiceFile = File(
-      p.join(projectRoot, 'lib', 'core', 'services', 'hive_service.dart'),
-    );
-    if (packageName != null && hiveServiceFile.existsSync()) {
+    if (hasHiveService) {
       imports.add("import 'package:$packageName/core/services/hive_service.dart';");
     }
 
@@ -403,10 +403,14 @@ class HarnessGenerator {
         ..writeln("      await Hive.openBox('settings_box');")
         ..writeln("      await Hive.openBox('learning_box');")
         ..writeln("      await Hive.openBox('analytics_box');")
-        ..writeln('    } catch (_) {}')
-        ..writeln('    try {')
-        ..writeln('      await HiveService().init();')
         ..writeln('    } catch (_) {}');
+
+      if (hasHiveService) {
+        buffer
+          ..writeln('    try {')
+          ..writeln('      await HiveService().init();')
+          ..writeln('    } catch (_) {}');
+      }
     }
 
     buffer
@@ -470,16 +474,26 @@ class HarnessGenerator {
           if (widgetExpr != null) {
             buffer
               ..writeln('      final $rootKey = GlobalKey();')
-              ..writeln('      await tester.pumpWidget(')
-              ..writeln('        ProviderScope(')
-              ..writeln('          child: MaterialApp(')
+              ..writeln('      await tester.pumpWidget(');
+
+            if (isRiverpod) {
+              buffer.writeln('        ProviderScope(');
+            }
+
+            buffer
+              ..writeln('          MaterialApp(')
               ..writeln('            debugShowCheckedModeBanner: false,')
               ..writeln('            home: RepaintBoundary(')
               ..writeln('              key: $rootKey,')
               ..writeln('              child: $widgetExpr,')
               ..writeln('            ),')
-              ..writeln('          ),')
-              ..writeln('        ),')
+              ..writeln('          ),');
+
+            if (isRiverpod) {
+              buffer.writeln('        ),');
+            }
+
+            buffer
               ..writeln('      );')
               ..writeln('      await tester.pump();')
               ..writeln('      for (int i = 0; i < 50; i++) {')
