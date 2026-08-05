@@ -466,103 +466,96 @@ class HarnessGenerator {
             '${deviceSpec.id}_${screenId}_$locale.png',
           );
           final goldenPath = p.join('..', outputPath);
+          final subtitle = screen.subtitle ?? screen.route;
 
-          buffer.writeln(
-            '      // --- ${deviceSpec.name} | $screenId | $locale ---',
-          );
+          buffer
+            ..writeln(
+              '      // --- ${deviceSpec.name} | $screenId | $locale ---',
+            )
+            ..writeln('      final $rootKey = GlobalKey();')
+            ..writeln('      bool ${rootKey}_success = false;');
 
           if (widgetExpr != null) {
-            buffer
-              ..writeln('      final $rootKey = GlobalKey();')
-              ..writeln('      await tester.pumpWidget(');
+            buffer.writeln('      try {');
+            buffer.writeln('        await tester.pumpWidget(');
 
             if (isRiverpod) {
               buffer
-                ..writeln('        ProviderScope(')
-                ..writeln('          child: MaterialApp(');
+                ..writeln('          ProviderScope(')
+                ..writeln('            child: MaterialApp(');
             } else {
-              buffer.writeln('          MaterialApp(');
+              buffer.writeln('            MaterialApp(');
             }
 
             buffer
-              ..writeln('            debugShowCheckedModeBanner: false,')
-              ..writeln('            home: RepaintBoundary(')
-              ..writeln('              key: $rootKey,')
-              ..writeln('              child: $widgetExpr,')
-              ..writeln('            ),')
-              ..writeln('          ),');
+              ..writeln('              debugShowCheckedModeBanner: false,')
+              ..writeln('              home: RepaintBoundary(')
+              ..writeln('                key: $rootKey,')
+              ..writeln('                child: $widgetExpr,')
+              ..writeln('              ),')
+              ..writeln('            ),');
 
             if (isRiverpod) {
-              buffer.writeln('        ),');
+              buffer.writeln('          ),');
             }
 
             buffer
-              ..writeln('      );')
-              ..writeln('      await tester.pump();')
-              ..writeln('      for (int i = 0; i < 50; i++) {')
+              ..writeln('        );')
+              ..writeln('        await tester.pump();')
+              ..writeln('        for (int i = 0; i < 50; i++) {')
               ..writeln(
-                '        await tester.pump(const Duration(milliseconds: 100));',
+                '          await tester.pump(const Duration(milliseconds: 100));',
               )
-              ..writeln('      }')
-              ..writeln('      tester.takeException();');
-          } else {
-            final subtitle = screen.subtitle ?? screen.route;
-            buffer
-              ..writeln('      final $rootKey = GlobalKey();')
-              ..writeln('      await tester.pumpWidget(')
-              ..writeln('        MaterialApp(')
-              ..writeln('          debugShowCheckedModeBanner: false,')
-              ..writeln('          home: RepaintBoundary(')
-              ..writeln('            key: $rootKey,')
-              ..writeln('            child: Scaffold(')
+              ..writeln('        }')
+              ..writeln('        tester.takeException();')
               ..writeln(
-                '              backgroundColor: const Color(0xFF1A1A2E),',
+                '        ${rootKey}_success = find.byKey($rootKey).evaluate().isNotEmpty;',
               )
-              ..writeln('              body: Center(')
-              ..writeln('                child: Column(')
-              ..writeln('                  mainAxisSize: MainAxisSize.min,')
-              ..writeln('                  children: [')
-              ..writeln("                    Text('${screen.title}',")
-              ..writeln(
-                '                      style: const TextStyle(',
-              )
-              ..writeln(
-                '                        color: Colors.white,',
-              )
-              ..writeln(
-                '                        fontSize: 28,',
-              )
-              ..writeln(
-                '                        fontWeight: FontWeight.bold,',
-              )
-              ..writeln('                      ),')
-              ..writeln('                    ),')
-              ..writeln('                    const SizedBox(height: 8),')
-              ..writeln("                    Text('$subtitle',")
-              ..writeln('                      style: const TextStyle(')
-              ..writeln(
-                '                        color: Colors.white70,',
-              )
-              ..writeln('                        fontSize: 16,')
-              ..writeln('                      ),')
-              ..writeln('                    ),')
-              ..writeln('                  ],')
-              ..writeln('                ),')
-              ..writeln('              ),')
-              ..writeln('            ),')
-              ..writeln('          ),')
-              ..writeln('        ),')
-              ..writeln('      );')
-              ..writeln('      await tester.pump();')
-              ..writeln('      for (int i = 0; i < 50; i++) {')
-              ..writeln(
-                '        await tester.pump(const Duration(milliseconds: 100));',
-              )
-              ..writeln('      }')
-              ..writeln('      tester.takeException();');
+              ..writeln('      } catch (_) {}');
           }
 
           buffer
+            ..writeln('      if (!${rootKey}_success) {')
+            ..writeln('        await tester.pumpWidget(')
+            ..writeln('          MaterialApp(')
+            ..writeln('            debugShowCheckedModeBanner: false,')
+            ..writeln('            home: RepaintBoundary(')
+            ..writeln('              key: $rootKey,')
+            ..writeln('              child: Scaffold(')
+            ..writeln(
+              '                backgroundColor: const Color(0xFF1A1A2E),',
+            )
+            ..writeln('                body: Center(')
+            ..writeln('                  child: Column(')
+            ..writeln('                    mainAxisSize: MainAxisSize.min,')
+            ..writeln('                    children: [')
+            ..writeln("                      Text('${screen.title}',")
+            ..writeln('                        style: const TextStyle(')
+            ..writeln('                          color: Colors.white,')
+            ..writeln('                          fontSize: 28,')
+            ..writeln('                          fontWeight: FontWeight.bold,')
+            ..writeln('                        ),')
+            ..writeln('                      ),')
+            ..writeln('                      const SizedBox(height: 8),')
+            ..writeln("                      Text('$subtitle',")
+            ..writeln('                        style: const TextStyle(')
+            ..writeln('                          color: Colors.white70,')
+            ..writeln('                          fontSize: 16,')
+            ..writeln('                        ),')
+            ..writeln('                      ),')
+            ..writeln('                    ],')
+            ..writeln('                  ),')
+            ..writeln('                ),')
+            ..writeln('              ),')
+            ..writeln('            ),')
+            ..writeln('          ),')
+            ..writeln('        );')
+            ..writeln('        await tester.pump();')
+            ..writeln('      }')
+            ..writeln('      final ${rootKey}_file = File(r"$outputPath");')
+            ..writeln('      if (!${rootKey}_file.parent.existsSync()) {')
+            ..writeln('        ${rootKey}_file.parent.createSync(recursive: true);')
+            ..writeln('      }')
             ..writeln('      await expectLater(')
             ..writeln('        find.byKey($rootKey),')
             ..writeln("        matchesGoldenFile('$goldenPath'),")
