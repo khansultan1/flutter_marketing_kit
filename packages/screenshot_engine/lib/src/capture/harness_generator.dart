@@ -473,7 +473,8 @@ class HarnessGenerator {
               '      // --- ${deviceSpec.name} | $screenId | $locale ---',
             )
             ..writeln('      final $rootKey = GlobalKey();')
-            ..writeln('      bool ${rootKey}_success = false;');
+            ..writeln('      bool ${rootKey}_success = false;')
+            ..writeln('      await tester.pumpWidget(const SizedBox.shrink());');
 
           if (widgetExpr != null) {
             buffer.writeln('      try {');
@@ -482,18 +483,22 @@ class HarnessGenerator {
             if (isRiverpod) {
               buffer
                 ..writeln('          ProviderScope(')
-                ..writeln('            child: MaterialApp(');
+                ..writeln('            key: ValueKey("ps_$rootKey"),')
+                ..writeln('            child: MaterialApp(')
+                ..writeln('              key: ValueKey("app_$rootKey"),');
             } else {
-              buffer.writeln('            MaterialApp(');
+              buffer
+                ..writeln('          MaterialApp(')
+                ..writeln('            key: ValueKey("app_$rootKey"),');
             }
 
             buffer
-              ..writeln('              debugShowCheckedModeBanner: false,')
-              ..writeln('              home: RepaintBoundary(')
-              ..writeln('                key: $rootKey,')
-              ..writeln('                child: $widgetExpr,')
-              ..writeln('              ),')
-              ..writeln('            ),');
+              ..writeln('            debugShowCheckedModeBanner: false,')
+              ..writeln('            home: RepaintBoundary(')
+              ..writeln('              key: $rootKey,')
+              ..writeln('              child: $widgetExpr,')
+              ..writeln('            ),')
+              ..writeln('          ),');
 
             if (isRiverpod) {
               buffer.writeln('          ),');
@@ -516,8 +521,12 @@ class HarnessGenerator {
 
           buffer
             ..writeln('      if (!${rootKey}_success) {')
+            ..writeln(
+              '        await tester.pumpWidget(const SizedBox.shrink());',
+            )
             ..writeln('        await tester.pumpWidget(')
             ..writeln('          MaterialApp(')
+            ..writeln('            key: ValueKey("fallback_$rootKey"),')
             ..writeln('            debugShowCheckedModeBanner: false,')
             ..writeln('            home: RepaintBoundary(')
             ..writeln('              key: $rootKey,')
