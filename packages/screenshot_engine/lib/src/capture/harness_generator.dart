@@ -3,6 +3,17 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:shared/shared.dart';
 
+/// Class representing a detected screen widget and its import path.
+class DetectedScreen {
+  final String className;
+  final String importPath;
+
+  const DetectedScreen({
+    required this.className,
+    required this.importPath,
+  });
+}
+
 /// Generates a Flutter widget test harness file inside the **calling project**
 /// (the user's own app, not the package's example).
 ///
@@ -64,9 +75,10 @@ class HarnessGenerator {
     return false;
   }
 
-  /// Finds all `.ttf` and `.otf` font files in `assets/fonts/` or `assets/`.
-  List<Map<String, String>> _detectAppFonts(String projectRoot) {
-    final fonts = <Map<String, String>>[];
+  /// Finds all `.ttf` and `.otf` font files in `assets/fonts/` or `assets/`,
+  /// grouped by font family.
+  Map<String, List<String>> _detectAppFonts(String projectRoot) {
+    final fontMap = <String, List<String>>{};
     final fontsDir = Directory(p.join(projectRoot, 'assets', 'fonts'));
     if (fontsDir.existsSync()) {
       final entities = fontsDir.listSync(recursive: true);
@@ -76,38 +88,46 @@ class HarnessGenerator {
           final filename = p.basenameWithoutExtension(entity.path);
           final family = filename.split('-').first;
           final relPath = p.relative(entity.path, from: projectRoot);
-          fonts.add({'family': family, 'path': relPath});
+          fontMap.putIfAbsent(family, () => []).add(relPath);
         }
       }
     }
-    return fonts;
+    return fontMap;
   }
 
-  /// Map route paths to screen widget constructors by scanning `lib/`
-  Map<String, String> _detectRouteWidgets(String projectRoot) {
-    final routeMap = <String, String>{};
+  /// Dynamically detects screen widget classes across `lib/` in any Flutter app.
+  Map<String, DetectedScreen> _detectAllScreens(
+    String projectRoot,
+    String packageName,
+  ) {
+    final screens = <String, DetectedScreen>{};
     final libDir = Directory(p.join(projectRoot, 'lib'));
-    if (!libDir.existsSync()) return routeMap;
+    if (!libDir.existsSync()) return screens;
 
     final files = libDir
         .listSync(recursive: true)
         .whereType<File>()
         .where((f) => f.path.endsWith('.dart'));
 
+    final classRegex = RegExp(
+      r'class\s+([A-Z][a-zA-Z0-9_]*(?:Screen|Page|View))\s+extends',
+    );
+
     for (final file in files) {
       final content = file.readAsStringSync();
-      if (content.contains('class HomeScreen')) routeMap['/'] = 'HomeScreen';
-      if (content.contains('class WorldMapScreen')) {
-        routeMap['/world-map'] = 'WorldMapScreen';
-      }
-      if (content.contains('class AlphabetBoardScreen')) {
-        routeMap['/alphabet-board'] = 'AlphabetBoardScreen';
-      }
-      if (content.contains('class VocabExplorerScreen')) {
-        routeMap['/vocab-explorer'] = 'VocabExplorerScreen';
+      final matches = classRegex.allMatches(content);
+      final relPath = p.relative(file.path, from: libDir.path);
+      final importPath = 'package:$packageName/$relPath';
+
+      for (final m in matches) {
+        final className = m.group(1)!;
+        screens[className] = DetectedScreen(
+          className: className,
+          importPath: importPath,
+        );
       }
     }
-    return routeMap;
+    return screens;
   }
 
   /// Reads `lib/main.dart` at [projectRoot] and returns the widget class
@@ -154,6 +174,35 @@ class HarnessGenerator {
     return null;
   }
 
+  /// Map route path to best matching detected screen widget class name
+  String? _resolveRouteWidget(
+    String route,
+    String screenId,
+    Map<String, DetectedScreen> detectedScreens,
+    String? mainWidget,
+  ) {
+    final cleanRoute = route.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
+    final cleanId = screenId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
+
+    for (final entry in detectedScreens.entries) {
+      final nameLower = entry.key.toLowerCase();
+      if (cleanId.isNotEmpty && nameLower.contains(cleanId)) {
+        return entry.key;
+      }
+      if (cleanRoute.isNotEmpty && nameLower.contains(cleanRoute)) {
+        return entry.key;
+      }
+    }
+
+    if (route == '/' || cleanRoute == 'home') {
+      for (final key in detectedScreens.keys) {
+        if (key.toLowerCase().contains('home')) return key;
+      }
+    }
+
+    return mainWidget;
+  }
+
   /// Generates `test/marketing_screenshots_test.dart` inside [projectRoot].
   Future<File> generateHarnessScript({
     required MarketingConfig config,
@@ -172,8 +221,11 @@ class HarnessGenerator {
     final isRiverpod = _usesRiverpod(projectRoot);
     final isHive = _usesHive(projectRoot);
     final isFlutterAnimate = _usesFlutterAnimate(projectRoot);
-    final appFonts = _detectAppFonts(projectRoot);
-    final detectedRouteWidgets = _detectRouteWidgets(projectRoot);
+    final fontMap = _detectAppFonts(projectRoot);
+    final detectedScreens = packageName != null
+        ? _detectAllScreens(projectRoot, packageName)
+        : <String, DetectedScreen>{};
+
     final canImportApp = packageName != null && mainWidget != null;
 
     final buffer = StringBuffer()
@@ -204,65 +256,85 @@ class HarnessGenerator {
       );
     }
 
+    final imports = <String>{};
     if (canImportApp) {
-      buffer.writeln("import 'package:$packageName/main.dart';");
-      if (detectedRouteWidgets.values.contains('HomeScreen')) {
-        buffer.writeln(
-          "import 'package:$packageName/features/home/presentation/home_screen.dart';",
-        );
-      }
-      if (detectedRouteWidgets.values.contains('WorldMapScreen')) {
-        buffer.writeln(
-          "import 'package:$packageName/features/home/presentation/world_map_screen.dart';",
-        );
-      }
-      if (detectedRouteWidgets.values.contains('AlphabetBoardScreen')) {
-        buffer.writeln(
-          "import 'package:$packageName/features/learning/presentation/alphabet_board_screen.dart';",
-        );
-      }
-      final hiveServiceFile = File(
-        p.join(projectRoot, 'lib', 'core', 'services', 'hive_service.dart'),
+      imports.add("import 'package:$packageName/main.dart';");
+    }
+
+    for (final entry in config.screens.entries) {
+      final screenId = entry.key;
+      final route = entry.value.route;
+      final widgetName = _resolveRouteWidget(
+        route,
+        screenId,
+        detectedScreens,
+        mainWidget,
       );
-      if (hiveServiceFile.existsSync()) {
-        buffer.writeln(
-          "import 'package:$packageName/core/services/hive_service.dart';",
-        );
+      if (widgetName != null && detectedScreens.containsKey(widgetName)) {
+        imports.add("import '${detectedScreens[widgetName]!.importPath}';");
       }
+    }
+
+    final hiveServiceFile = File(
+      p.join(projectRoot, 'lib', 'core', 'services', 'hive_service.dart'),
+    );
+    if (packageName != null && hiveServiceFile.existsSync()) {
+      imports.add("import 'package:$packageName/core/services/hive_service.dart';");
+    }
+
+    for (final imp in imports) {
+      buffer.writeln(imp);
     }
 
     buffer
       ..writeln()
-      ..writeln('Future<void> _loadAppFonts() async {')
-      ..writeln('  final fonts = <Map<String, String>>[');
+      ..writeln('Future<void> _loadAppFonts() async {');
 
-    for (final font in appFonts) {
-      buffer.writeln(
-        "    {'family': '${font['family']}', 'path': '${font['path']}'},",
-      );
+    for (final entry in fontMap.entries) {
+      final family = entry.key;
+      final paths = entry.value;
+      buffer
+        ..writeln("  final loader_$family = FontLoader('$family');")
+        ..writeln("  for (final path in ${paths.map((p) => "'$p'").toList()}) {")
+        ..writeln('    final file = File(path);')
+        ..writeln('    if (file.existsSync()) {')
+        ..writeln('      final bytes = await file.readAsBytes();')
+        ..writeln(
+          '      loader_$family.addFont(Future.value(ByteData.view(bytes.buffer)));',
+        )
+        ..writeln('    }')
+        ..writeln('  }')
+        ..writeln('  await loader_$family.load();');
     }
+
     final cairoFile = File(
       p.join(projectRoot, 'assets', 'fonts', 'Cairo-Bold.ttf'),
     );
-    if (cairoFile.existsSync()) {
-      buffer.writeln(
-        "    {'family': 'Dongol', 'path': 'assets/fonts/Cairo-Bold.ttf'},",
-      );
+    final fredokaFile = File(
+      p.join(projectRoot, 'assets', 'fonts', 'Fredoka-Bold.ttf'),
+    );
+
+    if (cairoFile.existsSync() || fredokaFile.existsSync()) {
+      buffer
+        ..writeln("  final dongolLoader = FontLoader('Dongol');")
+        ..writeln('  for (final path in [')
+        ..writeln("    'assets/fonts/Fredoka-Bold.ttf',")
+        ..writeln("    'assets/fonts/Fredoka-Regular.ttf',")
+        ..writeln("    'assets/fonts/Cairo-Bold.ttf',")
+        ..writeln("    'assets/fonts/Cairo-Regular.ttf',")
+        ..writeln('  ]) {')
+        ..writeln('    final file = File(path);')
+        ..writeln('    if (file.existsSync()) {')
+        ..writeln('      final bytes = await file.readAsBytes();')
+        ..writeln(
+          '      dongolLoader.addFont(Future.value(ByteData.view(bytes.buffer)));',
+        )
+        ..writeln('    }')
+        ..writeln('  }')
+        ..writeln('  await dongolLoader.load();');
     }
 
     buffer
-      ..writeln('  ];')
-      ..writeln('  for (final f in fonts) {')
-      ..writeln("    final file = File(f['path']!);")
-      ..writeln('    if (file.existsSync()) {')
-      ..writeln("      final loader = FontLoader(f['family']!);")
-      ..writeln('      final bytes = await file.readAsBytes();')
-      ..writeln(
-        '      loader.addFont(Future.value(ByteData.view(bytes.buffer)));',
-      )
-      ..writeln('      await loader.load();')
-      ..writeln('    }')
-      ..writeln('  }')
       ..writeln(
         "  final flutterRoot = Platform.environment['FLUTTER_ROOT'] ?? '';",
       )
@@ -371,7 +443,13 @@ class HarnessGenerator {
           final rootKey = 'key_${deviceSpec.id}_${screenId}_$locale'
               .replaceAll('-', '_');
 
-          final widgetConstructor = detectedRouteWidgets[route] ?? mainWidget;
+          final widgetConstructor = _resolveRouteWidget(
+            route,
+            screenId,
+            detectedScreens,
+            mainWidget,
+          );
+
           final widgetExpr = canImportApp && widgetConstructor != null
               ? 'const $widgetConstructor()'
               : null;
