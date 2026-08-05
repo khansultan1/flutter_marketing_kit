@@ -477,11 +477,14 @@ class HarnessGenerator {
               ..writeln('      await tester.pumpWidget(');
 
             if (isRiverpod) {
-              buffer.writeln('        ProviderScope(');
+              buffer
+                ..writeln('        ProviderScope(')
+                ..writeln('          child: MaterialApp(');
+            } else {
+              buffer.writeln('          MaterialApp(');
             }
 
             buffer
-              ..writeln('          MaterialApp(')
               ..writeln('            debugShowCheckedModeBanner: false,')
               ..writeln('            home: RepaintBoundary(')
               ..writeln('              key: $rootKey,')
