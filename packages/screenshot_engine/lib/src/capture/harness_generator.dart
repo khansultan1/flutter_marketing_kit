@@ -415,13 +415,7 @@ class HarnessGenerator {
 
     buffer
       ..writeln('    await _loadAppFonts();')
-      ..writeln('  });')
-      ..writeln()
-      ..writeln('  testWidgets(')
-      ..writeln("    'Marketing Screenshots',")
-      ..writeln('    (WidgetTester tester) async {')
-      ..writeln('      final binding = tester.binding;')
-      ..writeln();
+      ..writeln('  });');
 
     for (final deviceId in config.devices) {
       final deviceSpec = DeviceSpec.findById(deviceId);
@@ -430,13 +424,6 @@ class HarnessGenerator {
       final width = deviceSpec.width;
       final height = deviceSpec.height;
       final ratio = deviceSpec.pixelRatio;
-
-      buffer
-        ..writeln('      tester.view.physicalSize = const Size($width, $height);')
-        ..writeln('      tester.view.devicePixelRatio = $ratio;')
-        ..writeln(
-          '      await binding.setSurfaceSize(const Size($width, $height));',
-        );
 
       for (final locale in config.languages) {
         for (final entry in config.screens.entries) {
@@ -469,12 +456,20 @@ class HarnessGenerator {
           final subtitle = screen.subtitle ?? screen.route;
 
           buffer
+            ..writeln()
+            ..writeln('  testWidgets(')
+            ..writeln("    '${deviceSpec.name} - $screenId - $locale',")
+            ..writeln('    (WidgetTester tester) async {')
+            ..writeln('      final binding = tester.binding;')
             ..writeln(
-              '      // --- ${deviceSpec.name} | $screenId | $locale ---',
+              '      tester.view.physicalSize = const Size($width, $height);',
+            )
+            ..writeln('      tester.view.devicePixelRatio = $ratio;')
+            ..writeln(
+              '      await binding.setSurfaceSize(const Size($width, $height));',
             )
             ..writeln('      final $rootKey = GlobalKey();')
-            ..writeln('      bool ${rootKey}_success = false;')
-            ..writeln('      await tester.pumpWidget(const SizedBox.shrink());');
+            ..writeln('      bool ${rootKey}_success = false;');
 
           if (widgetExpr != null) {
             buffer.writeln('      try {');
@@ -493,12 +488,12 @@ class HarnessGenerator {
             }
 
             buffer
-              ..writeln('            debugShowCheckedModeBanner: false,')
-              ..writeln('            home: RepaintBoundary(')
-              ..writeln('              key: $rootKey,')
-              ..writeln('              child: $widgetExpr,')
-              ..writeln('            ),')
-              ..writeln('          ),');
+              ..writeln('              debugShowCheckedModeBanner: false,')
+              ..writeln('              home: RepaintBoundary(')
+              ..writeln('                key: $rootKey,')
+              ..writeln('                child: $widgetExpr,')
+              ..writeln('              ),')
+              ..writeln('            ),');
 
             if (isRiverpod) {
               buffer.writeln('          ),');
@@ -569,16 +564,13 @@ class HarnessGenerator {
             ..writeln('        find.byKey($rootKey),')
             ..writeln("        matchesGoldenFile('$goldenPath'),")
             ..writeln('      );')
-            ..writeln();
+            ..writeln('    },')
+            ..writeln('  );');
         }
       }
     }
 
-    buffer
-      ..writeln('      await tester.pump(const Duration(days: 999));')
-      ..writeln('    },')
-      ..writeln('  );')
-      ..writeln('}');
+    buffer.writeln('}');
 
     await harnessFile.writeAsString(buffer.toString());
     return harnessFile;
