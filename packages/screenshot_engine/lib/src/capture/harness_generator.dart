@@ -65,6 +65,49 @@ class HarnessGenerator {
     return false;
   }
 
+  /// Checks if [projectRoot] uses Google Fonts.
+  bool _usesGoogleFonts(String projectRoot) {
+    final pubspec = File(p.join(projectRoot, 'pubspec.yaml'));
+    if (pubspec.existsSync() &&
+        pubspec.readAsStringSync().contains('google_fonts')) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Dynamically detects all Hive box names referenced across `lib/` dart files.
+  Set<String> _detectHiveBoxNames(String projectRoot) {
+    final boxNames = <String>{
+      'progress_box',
+      'settings_box',
+      'learning_box',
+      'analytics_box',
+      'player_box',
+      'game_box',
+      'user_box',
+      'app_box',
+    };
+    final libDir = Directory(p.join(projectRoot, 'lib'));
+    if (libDir.existsSync()) {
+      final files = libDir
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.dart'));
+      final boxRegex =
+          RegExp(r'''(?:openBox|box)(?:<[^>]+>)?\s*\(\s*['"]([^'"]+)['"]''');
+      for (final f in files) {
+        final content = f.readAsStringSync();
+        for (final m in boxRegex.allMatches(content)) {
+          final name = m.group(1);
+          if (name != null && name.isNotEmpty) {
+            boxNames.add(name);
+          }
+        }
+      }
+    }
+    return boxNames;
+  }
+
   /// Checks if [projectRoot] uses flutter_animate.
   bool _usesFlutterAnimate(String projectRoot) {
     final pubspec = File(p.join(projectRoot, 'pubspec.yaml'));
@@ -220,7 +263,9 @@ class HarnessGenerator {
     final mainWidget = _detectMainWidget(projectRoot);
     final isRiverpod = _usesRiverpod(projectRoot);
     final isHive = _usesHive(projectRoot);
+    final isGoogleFonts = _usesGoogleFonts(projectRoot);
     final isFlutterAnimate = _usesFlutterAnimate(projectRoot);
+    final hiveBoxes = _detectHiveBoxNames(projectRoot);
     final fontMap = _detectAppFonts(projectRoot);
     final detectedScreens = packageName != null
         ? _detectAllScreens(projectRoot, packageName)
@@ -251,6 +296,10 @@ class HarnessGenerator {
 
     if (isHive) {
       buffer.writeln("import 'package:hive_flutter/hive_flutter.dart';");
+    }
+
+    if (isGoogleFonts) {
+      buffer.writeln("import 'package:google_fonts/google_fonts.dart';");
     }
 
     if (isFlutterAnimate) {
@@ -358,6 +407,10 @@ class HarnessGenerator {
       ..writeln('    TestWidgetsFlutterBinding.ensureInitialized();')
       ..writeln('    FlutterError.onError = (FlutterErrorDetails details) {};');
 
+    if (isGoogleFonts) {
+      buffer.writeln('    try { GoogleFonts.config.allowRuntimeFetching = false; } catch (_) {}');
+    }
+
     if (isFlutterAnimate) {
       buffer.writeln('    Animate.defaultDuration = Duration.zero;');
     }
@@ -371,40 +424,44 @@ class HarnessGenerator {
         '    final messenger = '
         'TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;',
       )
-      ..writeln('    messenger.setMockMethodCallHandler(')
-      ..writeln("      const MethodChannel('plugins.flutter.io/path_provider'),")
-      ..writeln('      (MethodCall methodCall) async => tempDir.path,')
-      ..writeln('    );')
-      ..writeln('    messenger.setMockMethodCallHandler(')
-      ..writeln(
-        "      const MethodChannel('plugins.flutter.io/path_provider_macos'),",
-      )
-      ..writeln('      (MethodCall methodCall) async => tempDir.path,')
-      ..writeln('    );')
-      ..writeln('    messenger.setMockMethodCallHandler(')
-      ..writeln("      const MethodChannel('xyz.luan/audioplayers.global'),")
-      ..writeln('      (MethodCall methodCall) async => null,')
-      ..writeln('    );')
-      ..writeln('    messenger.setMockMethodCallHandler(')
-      ..writeln("      const MethodChannel('xyz.luan/audioplayers'),")
-      ..writeln('      (MethodCall methodCall) async => null,')
-      ..writeln('    );')
-      ..writeln('    messenger.setMockMethodCallHandler(')
-      ..writeln(
-        "      const MethodChannel('plugins.flutter.io/shared_preferences'),",
-      )
-      ..writeln('      (MethodCall methodCall) async => <String, dynamic>{},')
-      ..writeln('    );');
+      ..writeln('    final mockChannels = [')
+      ..writeln("      'plugins.flutter.io/path_provider',")
+      ..writeln("      'plugins.flutter.io/path_provider_macos',")
+      ..writeln("      'xyz.luan/audioplayers.global',")
+      ..writeln("      'xyz.luan/audioplayers',")
+      ..writeln("      'plugins.flutter.io/shared_preferences',")
+      ..writeln("      'purchases_flutter',")
+      ..writeln("      'plugins.flutter.io/google_mobile_ads',")
+      ..writeln("      'plugins.flutter.io/firebase_analytics',")
+      ..writeln("      'plugins.flutter.io/firebase_core',")
+      ..writeln("      'plugins.flutter.io/firebase_auth',")
+      ..writeln("      'plugins.flutter.io/package_info',")
+      ..writeln("      'dev.fluttercommunity.plus/package_info',")
+      ..writeln("      'dev.fluttercommunity.plus/connectivity',")
+      ..writeln("      'dev.fluttercommunity.plus/connectivity_status',")
+      ..writeln("      'dev.fluttercommunity.plus/device_info',")
+      ..writeln("      'flutter_vibrate',")
+      ..writeln("      'vibration',")
+      ..writeln("      'sqflite',")
+      ..writeln('    ];')
+      ..writeln('    for (final ch in mockChannels) {')
+      ..writeln('      messenger.setMockMethodCallHandler(')
+      ..writeln('        MethodChannel(ch),')
+      ..writeln('        (MethodCall call) async {')
+      ..writeln("          if (call.method == 'getApplicationDocumentsDirectory' || call.method == 'getTemporaryDirectory') return tempDir.path;")
+      ..writeln("          if (call.method == 'getAll') return <String, dynamic>{};")
+      ..writeln('          return null;')
+      ..writeln('        },')
+      ..writeln('      );')
+      ..writeln('    }');
 
     if (isHive) {
-      buffer
-        ..writeln('    try {')
-        ..writeln('      Hive.init(tempDir.path);')
-        ..writeln("      await Hive.openBox('progress_box');")
-        ..writeln("      await Hive.openBox('settings_box');")
-        ..writeln("      await Hive.openBox('learning_box');")
-        ..writeln("      await Hive.openBox('analytics_box');")
-        ..writeln('    } catch (_) {}');
+      buffer.writeln('    try {');
+      buffer.writeln('      Hive.init(tempDir.path);');
+      for (final boxName in hiveBoxes) {
+        buffer.writeln("      await Hive.openBox('$boxName');");
+      }
+      buffer.writeln('    } catch (_) {}');
 
       if (hasHiveService) {
         buffer
@@ -568,8 +625,8 @@ class HarnessGenerator {
             ..writeln('      try {')
             ..writeln('        await expectLater(')
             ..writeln('          find.byKey($rootKey),')
-            ..writeln("          matchesGoldenFile('$goldenPath'),")
-            ..writeln('        );')
+            ..writeln("        matchesGoldenFile('$goldenPath'),")
+            ..writeln('      );')
             ..writeln('      } catch (_) {}')
             ..writeln('      try {')
             ..writeln('        await tester.pumpWidget(const SizedBox.shrink());')
